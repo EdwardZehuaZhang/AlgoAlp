@@ -1,0 +1,146 @@
+//@version=6 
+strategy("Simplified Strat w Background 0.001", overlay=true, pyramiding=2)
+
+// === Inputs ===
+ultrafastPeriod = input.int(20, title="Ultrafast SMA Period", minval=1)
+fastPeriod     = input.int(50, title="Fast SMA Period", minval=1)
+slowPeriod     = input.int(200, title="Slow SMA Period", minval=1)
+
+// === 1-Hour Timeframe Calculations ===
+get1hState() =>
+    var bool isBullish1h = false
+    fastMA = ta.sma(close, fastPeriod)
+    slowMA = ta.sma(close, slowPeriod)
+    goldenCross = ta.crossover(fastMA, slowMA)
+    deathCross = ta.crossunder(fastMA, slowMA)
+    if goldenCross
+        isBullish1h := true
+    else if deathCross
+        isBullish1h := false
+    closeAbove = close > fastMA and close > slowMA
+    closeBelow = close < fastMA and close < slowMA
+    [isBullish1h, closeAbove, closeBelow]
+
+[isBullish1h, closeAbove1h, closeBelow1h] = request.security(syminfo.tickerid, "60", get1hState())
+
+// === Determine Trend State ===
+trendState = isBullish1h and closeAbove1h ? 1 : 
+           not isBullish1h and closeBelow1h ? -1 : 0
+
+// === Determine 1-Hour Background Color ===
+trendColor = trendState == 1 ? color.new(color.green, 90) : 
+           trendState == -1 ? color.new(color.red, 90) : 
+           color.new(color.gray, 100)
+bgcolor(trendColor, title="1H Trend Background")
+
+// === Current TF SMA Calculations ===
+ultrafastSMA = ta.sma(close, ultrafastPeriod)
+fastSMA      = ta.sma(close, fastPeriod)
+slowSMA      = ta.sma(close, slowPeriod)
+
+// === Current TF Candle Coloring Logic ===
+goldenCross = ta.crossover(fastSMA, slowSMA)
+deathCross  = ta.crossunder(fastSMA, slowSMA)
+
+var bool isBullish = false
+if goldenCross
+    isBullish := true  
+else if deathCross
+    isBullish := false  
+
+var color candleColor = na
+if isBullish
+    candleColor := close > fastSMA and close > slowSMA ? color.new(color.yellow, 0) : color.new(color.gray, 0)
+else
+    candleColor := close < fastSMA and close < slowSMA ? color.new(color.maroon, 0) : color.new(color.gray, 0)
+
+barcolor(candleColor)
+
+// === RSI Setup ===
+rsiPeriod     = input.int(14, title="RSI Period", minval=1)
+rsiOverbought = 70
+rsiOversold   = 30
+rsiValue      = ta.rsi(close, rsiPeriod)
+
+// === MACD Setup ===
+macdFastLength      = input.int(12, title="MACD Fast Length", minval=1)
+macdSlowLength      = input.int(26, title="MACD Slow Length", minval=1)
+macdSignalSmoothing = input.int(9, title="MACD Signal Smoothing", minval=1)
+
+macdLine   = ta.ema(close, macdFastLength) - ta.ema(close, macdSlowLength)
+signalLine = ta.ema(macdLine, macdSignalSmoothing)
+
+// === Composite Signal with Lookback ===
+lookbackWindow = input.int(20, title="Lookback Window (bars)", minval=1)
+
+var int lastBuyRSIBar  = na
+var int lastSellRSIBar = na
+
+if ta.crossunder(rsiValue, rsiOversold)
+    lastBuyRSIBar := bar_index
+if ta.crossover(rsiValue, rsiOverbought)
+    lastSellRSIBar := bar_index
+
+if not na(lastBuyRSIBar) and (bar_index - lastBuyRSIBar > lookbackWindow)
+    lastBuyRSIBar := na
+if not na(lastSellRSIBar) and (bar_index - lastSellRSIBar > lookbackWindow)
+    lastSellRSIBar := na
+
+compositeBuy = ta.crossover(macdLine, signalLine) and (not na(lastBuyRSIBar))
+compositeSell = ta.crossunder(macdLine, signalLine) and (not na(lastSellRSIBar))
+
+if compositeBuy
+    lastBuyRSIBar := na
+if compositeSell
+    lastSellRSIBar := na
+
+// === Trading Logic with Trend Filter ===
+var float longLimitPrice = na
+var float longStopPrice = na
+var float shortLimitPrice = na
+var float shortStopPrice = na
+
+var bool wasLong = false
+var bool wasShort = false
+
+currentLong = strategy.position_size > 0
+currentShort = strategy.position_size < 0
+
+if not currentLong and wasLong
+    longLimitPrice := na
+    longStopPrice := na
+if not currentShort and wasShort
+    shortLimitPrice := na
+    shortStopPrice := na
+
+wasLong := currentLong
+wasShort := currentShort
+
+// Modified entry conditions with trend filtering
+if compositeBuy and strategy.position_size <= 0 and (trendState == 1 or trendState == 0)
+    strategy.order("LongEntry", strategy.long, qty=500)
+    longLimitPrice := close * 1.001
+    longStopPrice := close * 0.999
+    shortLimitPrice := na
+    shortStopPrice := na
+    strategy.exit("LongExit", "LongEntry", limit=longLimitPrice, stop=longStopPrice)
+
+if compositeSell and strategy.position_size >= 0 and (trendState == -1 or trendState == 0)
+    strategy.order("ShortEntry", strategy.short, qty=500)
+    shortLimitPrice := close * 0.999
+    shortStopPrice := close * 1.001
+    longLimitPrice := na
+    longStopPrice := na
+    strategy.exit("ShortExit", "ShortEntry", limit=shortLimitPrice, stop=shortStopPrice)
+
+// === Plotting ===
+plot(ultrafastSMA, color=color.new(color.yellow, 60), title="Ultra Fast SMA", linewidth=1)
+plot(fastSMA, color=color.new(color.fuchsia, 50), title="Fast SMA", linewidth=1)
+plot(slowSMA, color=color.new(color.blue, 50), title="Slow SMA", linewidth=1)
+
+bool showLongPlot = strategy.position_size > 0
+bool showShortPlot = strategy.position_size < 0
+plot(showLongPlot ? longLimitPrice : na, "Long Limit", color.green, 2, plot.style_linebr)
+plot(showLongPlot ? longStopPrice : na, "Long Stop", color.red, 2, plot.style_linebr)
+plot(showShortPlot ? shortLimitPrice : na, "Short Limit", color.green, 2, plot.style_linebr)
+plot(showShortPlot ? shortStopPrice : na, "Short Stop", color.red, 2, plot.style_linebr)
