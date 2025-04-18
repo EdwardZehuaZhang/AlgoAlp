@@ -6,6 +6,7 @@ import numpy as np
 from ta.trend import SMAIndicator, MACD
 from ta.momentum import RSIIndicator
 import datetime
+import time
 
 def get_hourly_data(api, symbol, lookback=100):
     """
@@ -108,18 +109,57 @@ def calculate_indicators(df, ultrafast_period, fast_period, slow_period, rsi_per
     # Calculate RSI
     df['rsi'] = RSIIndicator(close=df['close'], window=rsi_period).rsi()
     
-    # Calculate MACD
-    macd = MACD(
-        close=df['close'], 
-        window_slow=macd_slow, 
-        window_fast=macd_fast, 
-        window_sign=macd_signal
-    )
-    df['macd'] = macd.macd()
-    df['macd_signal'] = macd.macd_signal()
+    # Calculate MACD using EMA like in Pine Script
+    # In Pine Script: macdLine = ta.ema(close, macdFastLength) - ta.ema(close, macdSlowLength)
+    df['ema_fast'] = df['close'].ewm(span=macd_fast, adjust=False).mean()
+    df['ema_slow'] = df['close'].ewm(span=macd_slow, adjust=False).mean()
+    df['macd'] = df['ema_fast'] - df['ema_slow']
+    df['macd_signal'] = df['macd'].ewm(span=macd_signal, adjust=False).mean()
     
     # Calculate candle colors based on conditions
     df['close_above'] = (df['close'] > df['fast_sma']) & (df['close'] > df['slow_sma'])
     df['close_below'] = (df['close'] < df['fast_sma']) & (df['close'] < df['slow_sma'])
     
-    return df 
+    return df
+
+def handle_api_rate_limits(func):
+    """
+    Decorator to handle Alpaca API rate limits
+    """
+    def wrapper(*args, **kwargs):
+        max_retries = 3
+        retry_delay = 2  # seconds
+        
+        for attempt in range(max_retries):
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                if "rate limit" in str(e).lower() and attempt < max_retries - 1:
+                    print(f"Rate limit hit, retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                else:
+                    raise
+    
+    return wrapper
+
+def calculate_max_shares(api, symbol, risk_percent=1.0):
+    """
+    Calculate maximum shares to trade based on account equity and risk
+    """
+    try:
+        account = api.get_account()
+        equity = float(account.equity)
+        
+        # Get current price
+        latest_trade = api.get_latest_trade(symbol)
+        price = float(latest_trade.price)
+        
+        # Calculate position size based on risk
+        max_position_value = equity * (risk_percent / 100)
+        max_shares = int(max_position_value / price)
+        
+        return max_shares
+    except Exception as e:
+        print(f"Error calculating max shares: {str(e)}")
+        return 1  # Default to 1 share on error 

@@ -63,9 +63,23 @@ This will:
 - Display a performance summary of your trading activity
 - Save visualization images for later review
 
+### Performance Monitoring
+
+For detailed performance metrics:
+
+```bash
+python monitor.py
+```
+
+This will:
+- Calculate key trading statistics (win rate, profit factor, etc.)
+- Generate visual performance charts
+- Show account balance and position information
+- Track and report your trading history
+
 ## Customizing the Strategy
 
-### Modify Parameters
+### Basic Configuration
 
 Open `config.py` to adjust strategy parameters:
 
@@ -74,13 +88,32 @@ Open `config.py` to adjust strategy parameters:
 - Modify technical indicator periods
 - Change profit targets and stop loss levels
 
-### Backtesting
+### Real Market Enhancements
 
-While this implementation doesn't include full backtesting capabilities, you can:
+The following settings are available for real-market trading:
 
-1. Run the strategy for a short period in paper trading
-2. Use the visualization tools to review performance
-3. Adjust parameters and repeat
+```python
+# Risk management 
+RISK_PER_TRADE_PCT = 1.0  # Percentage of account to risk per trade
+USE_DYNAMIC_POSITION_SIZING = False  # Enable for dynamic sizing
+MAX_POSITION_SIZE = 5  # Maximum position size cap
+
+# Real market condition parameters
+SLIPPAGE_BUFFER = 0.01  # Buffer for slippage
+MIN_VOLUME_THRESHOLD = 1000  # Minimum trading volume required
+STALE_ORDER_MINUTES = 10  # Cancel orders older than this
+MAX_CONSECUTIVE_LOSSES = 3  # Pause after consecutive losses
+```
+
+### Advanced Risk Management
+
+The strategy includes several features to manage risk:
+
+1. **Dynamic Position Sizing** - Automatically sizes positions based on your account equity and risk per trade percentage
+2. **Volume Filtering** - Only trades when sufficient volume is present
+3. **Consecutive Loss Tracking** - Temporarily pauses trading after a defined number of consecutive losses
+4. **Stale Order Management** - Cancels orders that have been open too long
+5. **API Rate Limit Handling** - Automatically handles API rate limits with exponential backoff
 
 ## Deployment Options
 
@@ -101,14 +134,22 @@ For more reliable execution, consider:
 
 - This is for educational purposes only
 - Past performance does not guarantee future results
-- Paper trading does not account for all real-world factors like slippage
+- Paper trading does not account for all real-world factors
 - The 0.1% profit target strategy may not be profitable after all costs in real trading
+- Even with our real market enhancements, always monitor the strategy regularly
 
 ## Troubleshooting
 
 If you encounter issues:
 
-1. Check the log file (strategy.log) for detailed error messages
+1. Check the log files (strategy.log, monitor.log) for error messages
 2. Verify your API keys are correct in the .env file
 3. Ensure you have a stable internet connection
-4. Confirm that the market is open during testing 
+4. Confirm that the market is open during testing
+5. Make sure your account has sufficient buying power
+
+## Support
+
+If you need additional help or want to report an issue:
+1. Open an issue on GitHub
+2. Check the Alpaca API documentation for specific API questions 
