@@ -50,6 +50,49 @@ This will:
    - Execute trades according to the strategy rules
    - Log all activities in the terminal and strategy.log file
 
+### Backtesting Your Strategy
+
+To evaluate how your strategy would have performed historically:
+
+```bash
+python backtest.py --symbol SPY --days 90 --capital 10000
+```
+
+Options:
+- `--symbol`: The stock symbol to backtest (default: SPY)
+- `--start`: Start date in YYYY-MM-DD format
+- `--end`: End date in YYYY-MM-DD format
+- `--days`: Number of days to look back if no start date (default: 90)
+- `--capital`: Initial capital for the backtest (default: 10000)
+- `--shares`: Position size in shares (default: from config)
+- `--source`: Data source to use (default: polygon)
+
+You can also run a backtest through the interactive menu:
+
+```bash
+python run.py
+```
+
+Then select option 9 for backtesting.
+
+The backtest will:
+- Retrieve historical data for the specified period
+- Apply the same strategy logic as the live trading
+- Generate detailed performance metrics
+- Create visualization charts of trades and equity curve
+
+### Market Data Considerations
+
+AlgoAlp works with free Alpaca accounts by defaulting to:
+- IEX exchange data instead of SIP (consolidated) data
+- Alternative data sources like Polygon.io when needed
+- Yahoo Finance as a fallback option for backtests
+
+Note that without an Alpaca premium subscription:
+- Only IEX exchange data is available for real-time data
+- Historical data has some limitations
+- The script handles these constraints automatically
+
 ### Visualizing Results
 
 To see how your strategy is performing:
@@ -147,9 +190,10 @@ If you encounter issues:
 3. Ensure you have a stable internet connection
 4. Confirm that the market is open during testing
 5. Make sure your account has sufficient buying power
+6. If you see "subscription does not permit" errors, the script will automatically fall back to IEX data
 
 ## Support
 
 If you need additional help or want to report an issue:
 1. Open an issue on GitHub
-2. Check the Alpaca API documentation for specific API questions 
+2. Check the Alpaca API documentation for specific API questions
