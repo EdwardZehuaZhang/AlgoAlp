@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Polygon Candlestick Test</title>
+    <script src="https://unpkg.com/lightweight-charts@5.0.0/dist/lightweight-charts.standalone.production.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: #222;
+            color: #eee;
+        }
+        #chart-container {
+            width: 100%;
+            height: 400px;
+            position: relative;
+            margin: 20px 0;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            background-color: #333;
+        }
+        .success {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .error {
+            background-color: #f44336;
+            color: white;
+        }
+        .info {
+            background-color: #2196F3;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <h1>Simple Polygon Candlestick Test</h1>
+    <div id="status" class="status">Loading...</div>
+    <div id="chart-container"></div>
+    <div id="debug-info" class="status">Debug info will appear here...</div>
+
+    <script>
+        // Constants
+        const POLYGON_API_KEY = 'qdB8qbiJQcVUwqF3SqXxHJKVIABG4Saf';
+
+        // Logging function
+        function log(message, type = 'info') {
+            console.log(`[${type.toUpperCase()}] ${message}`);
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${type}`;
+        }
+
+        // Debug function
+        function debug(message, data = null) {
+            const debugDiv = document.getElementById('debug-info');
+            debugDiv.innerHTML = `<strong>Debug:</strong> ${message}`;
+            if (data) {
+                debugDiv.innerHTML += `<br><pre>${JSON.stringify(data, null, 2)}</pre>`;
+            }
+        }
+
+        // Global variables
+        let chart = null;
+        let candlestickSeries = null;
+
+        // Initialize chart
+        function createChart() {
+            log('Creating chart...');
+            
+            try {
+                chart = LightweightCharts.createChart(document.getElementById('chart-container'), {
+                    width: document.getElementById('chart-container').clientWidth,
+                    height: 400,
+                    layout: {
+                        background: { color: '#222' },
+                        textColor: '#DDD',
+                    },
+                    grid: {
+                        vertLines: { color: '#444' },
+                        horzLines: { color: '#444' },
+                    },
+                    rightPriceScale: {
+                        borderColor: '#555',
+                    },
+                    timeScale: {
+                        borderColor: '#555',
+                        timeVisible: true,
+                        secondsVisible: false,
+                    },
+                    crosshair: {
+                        mode: LightweightCharts.CrosshairMode.Normal,
+                    },
+                });
+
+                // Add candlestick series
+                candlestickSeries = chart.addSeries(LightweightCharts.CandlestickSeries, {
+                    upColor: '#26a69a',
+                    downColor: '#ef5350',
+                    borderVisible: false,
+                    wickUpColor: '#26a69a',
+                    wickDownColor: '#ef5350',
+                });
+
+                log('Chart created successfully', 'success');
+                return true;
+            } catch (error) {
+                log(`Error creating chart: ${error.message}`, 'error');
+                console.error('Error creating chart:', error);
+                return false;
+            }
+        }
+
+        // Load data from Polygon API
+        async function loadPolygonData() {
+            log('Loading Polygon.io data...');
+            
+            try {
+                // Calculate date range - for 5 minute data, limit to 7 days
+                const endDate = new Date();
+                const startDate = new Date();
+                startDate.setDate(endDate.getDate() - 7);
+                
+                const startDateStr = startDate.toISOString().split('T')[0];
+                const endDateStr = endDate.toISOString().split('T')[0];
+                
+                log(`Fetching data from ${startDateStr} to ${endDateStr}...`);
+                
+                // Format the URL for Polygon.io API
+                const url = `https://api.polygon.io/v2/aggs/ticker/SPY/range/5/minute/${startDateStr}/${endDateStr}`;
+                
+                // Request parameters
+                const params = new URLSearchParams({
+                    adjusted: 'true',
+                    sort: 'asc',
+                    limit: '50000',
+                    apiKey: POLYGON_API_KEY
+                });
+                
+                console.log('API Request:', `${url}?${params.toString().replace(POLYGON_API_KEY, 'API_KEY_HIDDEN')}`);
+                
+                const response = await fetch(`${url}?${params.toString()}`);
+                const json = await response.json();
+                
+                console.log('Raw API Response:', json);
+                
+                if (json.results && json.results.length > 0) {
+                    log(`Received ${json.results.length} raw data points`, 'success');
+                    
+                    // Process the data
+                    const processedData = processPolygonData(json.results);
+                    
+                    if (processedData.length > 0) {
+                        updateChart(processedData);
+                        
+                        // Show debug information
+                        debug('Successfully loaded data', {
+                            dataPoints: processedData.length,
+                            firstPoint: processedData[0],
+                            lastPoint: processedData[processedData.length - 1],
+                            priceRange: {
+                                min: Math.min(...processedData.map(d => d.low)),
+                                max: Math.max(...processedData.map(d => d.high))
+                            },
+                            totalVolume: processedData.reduce((sum, d) => sum + d.volume, 0)
+                        });
+                        
+                        log(`Successfully loaded ${processedData.length} data points`, 'success');
+                    } else {
+                        throw new Error('No data points after processing');
+                    }
+                } else {
+                    throw new Error('No results in Polygon API response');
+                }
+            } catch (error) {
+                log(`Error loading Polygon data: ${error.message}`, 'error');
+                console.error('Error loading Polygon data:', error);
+            }
+        }
+
+        // Process Polygon data
+        function processPolygonData(rawData) {
+            console.log('Processing Polygon data...');
+            console.log('Sample raw data point:', rawData[0]);
+            
+            // Filter market hours only (9:30 AM - 4:00 PM ET)
+            const marketHoursData = rawData.filter(item => {
+                const date = new Date(item.t);
+                const hours = date.getUTCHours();
+                const minutes = date.getUTCMinutes();
+                
+                // Convert UTC to ET (assuming EST, -5 hours)
+                const etHours = (hours - 5 + 24) % 24;
+                const etTime = etHours * 60 + minutes;
+                
+                // Market hours: 9:30 AM (570 minutes) to 4:00 PM (960 minutes)
+                return etTime >= 570 && etTime <= 960;
+            });
+            
+            console.log(`Filtered to ${marketHoursData.length} market hours data points`);
+            
+            // Transform to lightweight-charts format
+            const chartData = marketHoursData.map((item, index) => {
+                const dataPoint = {
+                    time: item.t / 1000, // Convert milliseconds to seconds
+                    open: item.o,
+                    high: item.h,
+                    low: item.l,
+                    close: item.c,
+                    volume: item.v || 0
+                };
+                
+                // Log first few data points for debugging
+                if (index < 3) {
+                    console.log(`Data point ${index}:`, dataPoint);
+                }
+                
+                return dataPoint;
+            });
+            
+            console.log('Final processed data sample:', chartData.slice(0, 3));
+            
+            return chartData;
+        }
+
+        // Update chart with data
+        function updateChart(data) {
+            if (!candlestickSeries) {
+                log('Chart series not initialized', 'error');
+                return;
+            }
+            
+            if (!data || data.length === 0) {
+                log('No data to update chart with', 'error');
+                return;
+            }
+            
+            console.log('Updating chart with data:', {
+                length: data.length,
+                first: data[0],
+                last: data[data.length - 1]
+            });
+            
+            try {
+                candlestickSeries.setData(data);
+                chart.timeScale().fitContent();
+                log('Chart updated successfully', 'success');
+            } catch (error) {
+                log(`Error updating chart: ${error.message}`, 'error');
+                console.error('Error updating chart:', error);
+            }
+        }
+
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (createChart()) {
+                await loadPolygonData();
+            }
+            
+            // Handle window resize
+            window.addEventListener('resize', () => {
+                if (chart) {
+                    chart.resize(
+                        document.getElementById('chart-container').clientWidth,
+                        400
+                    );
+                }
+            });
+        });
+    </script>
+</body>
+</html>

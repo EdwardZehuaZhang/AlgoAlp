@@ -1,0 +1,1 @@
+- Always refer to the local documentation in the `docs/lightweight-charts`, `docs/alpaca-api` directory for the Lightweight Charts library.

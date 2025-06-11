@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SPY Multi-Chart with SMA</title>
+    <script src="https://unpkg.com/lightweight-charts@5.0.0/dist/lightweight-charts.standalone.production.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            background-color: #222;
+            color: #eee;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .chart-title {
+            text-align: center;
+            margin-bottom: 10px;
+        }        #main-chart-container {
+            height: 70%;
+            position: relative;
+            margin-bottom: 10px;
+        }
+        #subchart-container {
+            height: 30%;
+            position: relative;
+        }
+        .chart-label {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.7);
+            color: #fff;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 14px;
+            z-index: 1000;
+            pointer-events: none;
+        }
+        .data-source-selector {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 10px;
+        }
+        .data-source-selector button {
+            margin: 0 10px;
+            padding: 8px 16px;
+            background: #444;
+            border: none;
+            color: #fff;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .data-source-selector button:hover {
+            background: #555;
+        }
+        .data-source-selector button.active {
+            background: #2962FF;
+        }
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 18px;
+            color: #fff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">        <h1 class="chart-title">SPY Data Comparison: CSV vs Polygon API (May 15-22, 2025)</h1>
+        
+        <div class="data-source-selector">
+            <button id="btn-load-both" class="active">Load Both Sources</button>
+            <button id="btn-csv-only">CSV Only</button>
+            <button id="btn-polygon-only">Polygon Only</button>
+        </div>        
+        <div id="main-chart-container">
+            <div class="chart-label">CSV Data</div>
+            <div class="loading" id="main-loading">Loading CSV data...</div>
+        </div>
+        
+        <div id="subchart-container">
+            <div class="chart-label">Polygon.io Data</div>
+            <div class="loading" id="sub-loading">Loading Polygon data...</div>
+        </div>
+    </div>
+
+    <script>        // Constants
+        const POLYGON_API_KEY = 'qdB8qbiJQcVUwqF3SqXxHJKVIABG4Saf';
+        const CSV_FILE_PATH = '../historical_data/spy_5min_20250515_to_20250522.csv';        // Chart references
+        let csvChart = null;        // Top chart for CSV data
+        let polygonChart = null;    // Bottom chart for Polygon data
+        let csvSeries = null;
+        let polygonSeries = null;
+        let csvSMA20Line = null;
+        let csvSMA50Line = null;
+        let polygonSMA20Line = null;
+        let polygonSMA50Line = null;
+
+        // Initialize charts when the page is fully loaded
+        document.addEventListener('DOMContentLoaded', () => {
+            createCharts();
+              // Set up data source buttons
+            document.getElementById('btn-load-both').addEventListener('click', () => {
+                setDataSource('both');
+            });
+            
+            document.getElementById('btn-csv-only').addEventListener('click', () => {
+                setDataSource('csv');
+            });
+            
+            document.getElementById('btn-polygon-only').addEventListener('click', () => {
+                setDataSource('polygon');
+            });
+            
+            // Start with both data sources by default
+            setDataSource('both');
+        });        // Create both charts with proper sizing and synchronization
+        function createCharts() {
+            // Create the CSV chart (70% height) - Top chart
+            const csvChartOptions = {
+                width: document.getElementById('main-chart-container').clientWidth,
+                height: document.getElementById('main-chart-container').clientHeight,
+                layout: {
+                    background: { color: '#222' },
+                    textColor: '#DDD',
+                },
+                grid: {
+                    vertLines: { color: '#444' },
+                    horzLines: { color: '#444' },
+                },
+                rightPriceScale: {
+                    borderColor: '#555',
+                },
+                timeScale: {
+                    borderColor: '#555',
+                    timeVisible: true,
+                    secondsVisible: false,
+                },
+                crosshair: {
+                    mode: LightweightCharts.CrosshairMode.Normal,
+                },
+            };
+            
+            csvChart = LightweightCharts.createChart(
+                document.getElementById('main-chart-container'),
+                csvChartOptions
+            );
+
+            // Create the Polygon chart (30% height) - Bottom chart
+            const polygonChartOptions = {
+                width: document.getElementById('subchart-container').clientWidth,
+                height: document.getElementById('subchart-container').clientHeight,
+                layout: {
+                    background: { color: '#222' },
+                    textColor: '#DDD',
+                },
+                grid: {
+                    vertLines: { color: '#444' },
+                    horzLines: { color: '#444' },
+                },
+                rightPriceScale: {
+                    borderColor: '#555',
+                },
+                timeScale: {
+                    borderColor: '#555',
+                    timeVisible: true,
+                    secondsVisible: false,
+                },
+                crosshair: {
+                    mode: LightweightCharts.CrosshairMode.Normal,
+                },
+            };
+              
+            polygonChart = LightweightCharts.createChart(
+                document.getElementById('subchart-container'),
+                polygonChartOptions
+            );
+              
+            // Add candlestick series to CSV chart (top)
+            csvSeries = csvChart.addSeries(LightweightCharts.CandlestickSeries, {
+                upColor: '#26a69a',
+                downColor: '#ef5350',
+                borderVisible: false,
+                wickUpColor: '#26a69a',
+                wickDownColor: '#ef5350',
+                title: 'CSV Data',
+            });
+              
+            // Add candlestick series to Polygon chart (bottom)
+            polygonSeries = polygonChart.addSeries(LightweightCharts.CandlestickSeries, {
+                upColor: '#4CAF50',
+                downColor: '#F44336',
+                borderVisible: false,
+                wickUpColor: '#4CAF50',
+                wickDownColor: '#F44336',
+                title: 'Polygon Data',
+            });            // Add SMA lines to CSV chart (top)
+            csvSMA20Line = csvChart.addSeries(LightweightCharts.LineSeries, {
+                color: '#2962FF', // Blue
+                lineWidth: 2,
+                priceLineVisible: false,
+                title: 'SMA 20',
+            });
+
+            csvSMA50Line = csvChart.addSeries(LightweightCharts.LineSeries, {
+                color: '#FF6D00', // Orange
+                lineWidth: 2,
+                priceLineVisible: false,
+                title: 'SMA 50',
+            });
+
+            // Add SMA lines to Polygon chart (bottom)
+            polygonSMA20Line = polygonChart.addSeries(LightweightCharts.LineSeries, {
+                color: '#9C27B0', // Purple
+                lineWidth: 2,
+                priceLineVisible: false,
+                title: 'SMA 20',
+            });
+            
+            polygonSMA50Line = polygonChart.addSeries(LightweightCharts.LineSeries, {
+                color: '#00BCD4', // Cyan
+                lineWidth: 2,
+                priceLineVisible: false,
+                title: 'SMA 50',
+            });
+
+            // Synchronize the time scales of both charts
+            syncCharts(csvChart, polygonChart);
+              // Handle window resize
+            window.addEventListener('resize', () => {
+                if (csvChart && polygonChart) {
+                    csvChart.resize(
+                        document.getElementById('main-chart-container').clientWidth,
+                        document.getElementById('main-chart-container').clientHeight
+                    );
+                    
+                    polygonChart.resize(
+                        document.getElementById('subchart-container').clientWidth,
+                        document.getElementById('subchart-container').clientHeight
+                    );
+                }
+            });
+
+            // Remove loading message
+            document.getElementById('main-loading').style.display = 'none';
+            document.getElementById('sub-loading').style.display = 'none';
+        }        // Synchronize the timescales of two charts
+        function syncCharts(csvChart, polygonChart) {
+            csvChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
+                if (range) {
+                    polygonChart.timeScale().setVisibleLogicalRange(range);
+                }
+            });
+
+            polygonChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
+                if (range) {
+                    csvChart.timeScale().setVisibleLogicalRange(range);
+                }
+            });
+        }        // Set the data source and load data
+        function setDataSource(source) {
+            // Update active button styling
+            document.getElementById('btn-load-both').classList.toggle('active', source === 'both');
+            document.getElementById('btn-csv-only').classList.toggle('active', source === 'csv');
+            document.getElementById('btn-polygon-only').classList.toggle('active', source === 'polygon');
+            
+            // Show loading messages
+            if (source === 'both' || source === 'csv') {
+                document.getElementById('main-loading').style.display = 'block';
+                document.getElementById('main-loading').textContent = 'Loading CSV data...';
+            }
+            if (source === 'both' || source === 'polygon') {
+                document.getElementById('sub-loading').style.display = 'block';
+                document.getElementById('sub-loading').textContent = 'Loading Polygon data...';
+            }
+            
+            // Load data from selected source(s)
+            if (source === 'both') {
+                loadCSVData();
+                loadPolygonData();
+            } else if (source === 'csv') {
+                loadCSVData();
+                clearPolygonChart();
+            } else if (source === 'polygon') {
+                loadPolygonData();
+                clearCSVChart();
+            }        }
+
+        // Clear CSV chart data
+        function clearCSVChart() {
+            if (csvSeries) csvSeries.setData([]);
+            if (csvSMA20Line) csvSMA20Line.setData([]);
+            if (csvSMA50Line) csvSMA50Line.setData([]);
+            document.getElementById('main-loading').style.display = 'none';
+        }
+
+        // Clear Polygon chart data
+        function clearPolygonChart() {
+            if (polygonSeries) polygonSeries.setData([]);
+            if (polygonSMA20Line) polygonSMA20Line.setData([]);
+            if (polygonSMA50Line) polygonSMA50Line.setData([]);
+            document.getElementById('sub-loading').style.display = 'none';
+        }        // Load data from CSV file
+        async function loadCSVData() {
+            try {
+                console.log('Loading CSV data...');
+                const response = await fetch(CSV_FILE_PATH);
+                const text = await response.text();
+                
+                // Parse CSV
+                const data = parseCSV(text);            console.log('CSV data loaded:', data.length, 'points');
+            if (data.length > 0) {
+                console.log('CSV - First timestamp (raw):', data[0].time);
+                console.log('CSV - First timestamp (date):', new Date(data[0].time * 1000));
+                console.log('CSV - Last timestamp (date):', new Date(data[data.length-1].time * 1000));
+                console.log('CSV - First entry local time check:', new Date(data[0].time * 1000).toLocaleString('en-US', {timeZone: 'America/New_York'}));
+            }
+                
+                // Update CSV chart with the data
+                updateCSVChart(data);
+                
+            } catch (error) {
+                console.error('Error loading CSV data:', error);
+                document.getElementById('main-loading').textContent = 'Error loading CSV data. Check console for details.';
+            }
+        }        // Load data from Polygon API
+        async function loadPolygonData() {
+            try {
+                // Use the same date range as our CSV data (May 15-22, 2025)
+                const startDateStr = '2025-05-15';
+                const endDateStr = '2025-05-22';
+                
+                console.log(`Fetching Polygon data from ${startDateStr} to ${endDateStr}`);
+                
+                // Format the URL for Polygon.io API
+                const url = `https://api.polygon.io/v2/aggs/ticker/SPY/range/5/minute/${startDateStr}/${endDateStr}`;
+                
+                // Request parameters
+                const params = new URLSearchParams({
+                    adjusted: 'true',
+                    sort: 'asc',
+                    limit: '50000',
+                    apiKey: POLYGON_API_KEY
+                });
+                
+                console.log(`Requesting: ${url}?${params.toString().replace(POLYGON_API_KEY, 'API_KEY_HIDDEN')}`);
+                
+                const response = await fetch(`${url}?${params.toString()}`);
+                const json = await response.json();
+                
+                console.log('Polygon API response status:', json.status);
+                
+                if (json.results && json.results.length > 0) {
+                    console.log(`Received ${json.results.length} data points from Polygon API`);
+                    
+                    // Add debug element to show data count
+                    const debugDiv = document.createElement('div');
+                    debugDiv.id = 'polygon-debug';
+                    debugDiv.style.position = 'fixed';
+                    debugDiv.style.top = '10px';
+                    debugDiv.style.right = '10px';
+                    debugDiv.style.backgroundColor = 'rgba(0,0,0,0.7)';
+                    debugDiv.style.color = '#fff';
+                    debugDiv.style.padding = '5px 10px';
+                    debugDiv.style.borderRadius = '5px';
+                    debugDiv.style.zIndex = '1000';
+                    debugDiv.textContent = `Polygon data: ${json.results.length} points`;
+                    document.body.appendChild(debugDiv);                // Filter market hours only (9:30 AM - 4:00 PM ET)
+                const filteredData = json.results.filter(item => {
+                    const utcDate = new Date(item.t);
+                    // Convert to Eastern Time (EDT is UTC-4, EST is UTC-5)
+                    // For June 2024, it should be EDT (UTC-4)
+                    const etHours = utcDate.getUTCHours() - 4;
+                    const etMinutes = utcDate.getUTCMinutes();
+                    
+                    // Handle day rollover for negative hours
+                    const adjustedHours = etHours < 0 ? etHours + 24 : etHours;
+                    const etTimeInMinutes = adjustedHours * 60 + etMinutes;
+                    
+                    // Market hours: 9:30 AM (570 minutes) to 4:00 PM (960 minutes) ET
+                    return etTimeInMinutes >= 570 && etTimeInMinutes <= 960;
+                });
+                    
+                    console.log(`Filtered to ${filteredData.length} data points (market hours only)`);
+                    if (filteredData.length > 0) {
+                        console.log('Polygon - First filtered item timestamp:', filteredData[0].t);
+                        console.log('Polygon - First filtered item date (UTC):', new Date(filteredData[0].t));
+                        console.log('Polygon - Last filtered item date (UTC):', new Date(filteredData[filteredData.length-1].t));
+                    }                    // Transform Polygon data format to our chart format
+                    const data = filteredData.map(item => {
+                        // Ensure volume is a valid number
+                        let volume = item.v;
+                        if (volume === undefined || volume === null) {
+                            console.log('Missing volume for data point:', item);
+                            volume = 0;
+                        }
+                        
+                        // Convert UTC timestamp to Eastern Time timestamp
+                        // Subtract 4 hours (EDT) from UTC to get ET
+                        const etTimestamp = item.t - (4 * 60 * 60 * 1000);
+                        
+                        return {
+                            time: etTimestamp / 1000, // Convert to seconds for lightweight-charts, now in ET
+                            open: item.o,
+                            high: item.h,
+                            low: item.l,
+                            close: item.c,
+                            volume: volume
+                        };
+                    });
+                      console.log('Sample of processed Polygon data:', data.slice(0, 5));
+                    if (data.length > 0) {
+                        console.log('Polygon - First processed timestamp:', data[0].time);
+                        console.log('Polygon - First processed date:', new Date(data[0].time * 1000));
+                        console.log('Polygon - Last processed date:', new Date(data[data.length-1].time * 1000));
+                    }
+                    
+                    // Update Polygon chart with the data
+                    updatePolygonChart(data);
+                } else {
+                    console.error('No results in Polygon API response:', json);
+                    throw new Error('No data returned from Polygon API');
+                }
+                } catch (error) {
+                console.error('Error loading Polygon data:', error);
+                document.getElementById('sub-loading').textContent = 'Error loading data from Polygon. Check console for details.';
+            }
+        }// Parse CSV text to data array
+        function parseCSV(text) {
+            const lines = text.trim().split('\n');
+            const headers = lines[0].split(',').map(header => header.trim().replace(/\r/g, '').replace(/\n/g, ''));
+            
+            // Find column indices - use more flexible matching for volume
+            const timeIndex = headers.indexOf('time');
+            const openIndex = headers.indexOf('open');
+            const highIndex = headers.indexOf('high');
+            const lowIndex = headers.indexOf('low');
+            const closeIndex = headers.indexOf('close');
+            let volumeIndex = headers.indexOf('volume');
+            
+            // If exact match fails, try to find volume with whitespace/carriage returns
+            if (volumeIndex === -1) {
+                volumeIndex = headers.findIndex(header => header.toLowerCase().includes('volume'));
+            }
+            
+            console.log('CSV Headers:', headers);
+            console.log('Volume column index:', volumeIndex);
+            
+            // Parse data rows
+            const data = [];
+            for (let i = 1; i < lines.length; i++) {
+                const values = lines[i].split(',');                // Parse time value - CSV data is already in Eastern Time
+                let timeValue = values[timeIndex];
+                // Handle different time formats
+                if (!isNaN(timeValue)) {
+                    // If it's a numeric timestamp
+                    timeValue = parseInt(timeValue);
+                    // Convert from milliseconds to seconds if needed
+                    if (timeValue > 1000000000000) {
+                        timeValue = timeValue / 1000;
+                    }                } else {
+                    // Parse CSV timestamp which is in Eastern Time format: "2025-05-15 09:30:00"
+                    // The CSV contains Eastern Time, and we need to preserve that for display
+                    
+                    const [datePart, timePart] = timeValue.split(' ');
+                    const [year, month, day] = datePart.split('-').map(Number);
+                    const [hour, minute, second] = timePart.split(':').map(Number);
+                    
+                    // Create a date object directly from the Eastern Time components
+                    // We'll assume this is Eastern Time and let the chart handle timezone display
+                    const date = new Date(year, month - 1, day, hour, minute, second || 0);
+                    timeValue = date.getTime() / 1000;
+                    
+                    // Debug logging for first few entries
+                    if (i <= 3) {
+                        console.log(`CSV Parse Debug - Entry ${i}:`);
+                        console.log(`  Original: ${timeValue} (should be 09:30:00)`);
+                        console.log(`  Parsed components: ${year}-${month}-${day} ${hour}:${minute}:${second || 0}`);
+                        console.log(`  Created Date object: ${date}`);
+                        console.log(`  Final timestamp: ${timeValue}`);
+                        console.log(`  Converts back to local: ${new Date(timeValue * 1000)}`);
+                        console.log(`  In NY timezone: ${new Date(timeValue * 1000).toLocaleString('en-US', {timeZone: 'America/New_York'})}`);
+                    }
+                }
+                
+                // Ensure volume is a proper number (not NaN or undefined)
+                let volumeValue = 0;
+                if (volumeIndex >= 0 && values[volumeIndex]) {
+                    volumeValue = parseFloat(values[volumeIndex]);
+                    if (isNaN(volumeValue)) volumeValue = 0;
+                }
+                
+                data.push({
+                    time: timeValue,
+                    open: parseFloat(values[openIndex]),
+                    high: parseFloat(values[highIndex]),
+                    low: parseFloat(values[lowIndex]),
+                    close: parseFloat(values[closeIndex]),
+                    volume: volumeValue
+                });
+            }
+            
+            return data;
+        }
+
+        // Calculate Simple Moving Average
+        function calculateSMA(data, period) {
+            const smaData = [];
+            
+            for (let i = 0; i < data.length; i++) {
+                if (i < period - 1) {
+                    // Not enough data points yet
+                    continue;
+                }
+                
+                let sum = 0;
+                for (let j = 0; j < period; j++) {
+                    sum += data[i - j].close;
+                }
+                
+                smaData.push({
+                    time: data[i].time,
+                    value: sum / period
+                });
+            }
+            
+            return smaData;        }
+
+        // Update CSV chart with data
+        function updateCSVChart(data) {
+            if (!data || data.length === 0) {
+                document.getElementById('main-loading').textContent = 'No CSV data available to display';
+                return;
+            }
+            
+            console.log('Updating CSV chart with data points:', data.length);
+            console.log('CSV - First data point:', data[0]);
+            console.log('CSV - Last data point:', data[data.length-1]);
+            
+            // Calculate SMAs
+            const sma20Data = calculateSMA(data, 20);
+            const sma50Data = calculateSMA(data, 50);
+            
+            console.log('CSV - SMA20 data points:', sma20Data.length);
+            console.log('CSV - SMA50 data points:', sma50Data.length);
+            
+            // Update CSV chart with candlestick data
+            csvSeries.setData(data);
+            
+            // Update SMA lines
+            csvSMA20Line.setData(sma20Data);
+            csvSMA50Line.setData(sma50Data);
+            
+            // Fit the visible range to see all data
+            csvChart.timeScale().fitContent();
+            
+            // Hide loading message
+            document.getElementById('main-loading').style.display = 'none';
+        }
+
+        // Update Polygon chart with data
+        function updatePolygonChart(data) {
+            if (!data || data.length === 0) {
+                document.getElementById('sub-loading').textContent = 'No Polygon data available to display';
+                return;
+            }
+            
+            console.log('Updating Polygon chart with data points:', data.length);
+            console.log('Polygon - First data point:', data[0]);
+            console.log('Polygon - Last data point:', data[data.length-1]);
+            
+            // Calculate SMAs
+            const sma20Data = calculateSMA(data, 20);
+            const sma50Data = calculateSMA(data, 50);
+            
+            console.log('Polygon - SMA20 data points:', sma20Data.length);
+            console.log('Polygon - SMA50 data points:', sma50Data.length);
+            
+            // Update Polygon chart with candlestick data
+            polygonSeries.setData(data);
+            
+            // Update SMA lines
+            polygonSMA20Line.setData(sma20Data);
+            polygonSMA50Line.setData(sma50Data);
+            
+            // Fit the visible range to see all data
+            polygonChart.timeScale().fitContent();
+            
+            // Hide loading message
+            document.getElementById('sub-loading').style.display = 'none';
+        }
+    </script>
+</body>
+</html>

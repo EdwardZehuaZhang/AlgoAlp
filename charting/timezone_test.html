@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Timezone Test</title>
+</head>
+<body>
+    <h1>Timezone Parsing Test</h1>
+    <div id="output"></div>
+
+    <script>
+        const output = document.getElementById('output');
+        
+        function addOutput(text) {
+            output.innerHTML += text + '<br>';
+            console.log(text);
+        }
+        
+        // Test CSV date parsing
+        const csvTimestamp = "2025-05-15 09:30:00";
+        addOutput("=== Testing CSV Timestamp Parsing ===");
+        addOutput("Original CSV timestamp: " + csvTimestamp);
+        
+        // Method 1: Direct Date parsing (what was happening before)
+        const directDate = new Date(csvTimestamp);
+        addOutput("Direct Date() parsing: " + directDate);
+        addOutput("Direct parsing in ET: " + directDate.toLocaleString('en-US', {timeZone: 'America/New_York'}));
+        
+        // Method 2: Our new parsing method
+        const [datePart, timePart] = csvTimestamp.split(' ');
+        const [year, month, day] = datePart.split('-').map(Number);
+        const [hour, minute, second] = timePart.split(':').map(Number);
+        
+        addOutput("Parsed components: year=" + year + ", month=" + month + ", day=" + day + ", hour=" + hour + ", minute=" + minute);
+        
+        // Create date in local timezone first
+        const etDate = new Date(year, month - 1, day, hour, minute, second || 0);
+        addOutput("Local Date object: " + etDate);
+        
+        // Convert to UTC for chart (add 4 hours for EDT)
+        const utcTimestamp = etDate.getTime() + (4 * 60 * 60 * 1000);
+        const utcDate = new Date(utcTimestamp);
+        addOutput("UTC converted date: " + utcDate);
+        addOutput("UTC in ET timezone: " + utcDate.toLocaleString('en-US', {timeZone: 'America/New_York'}));
+        
+        // Chart timestamp (in seconds)
+        const chartTimestamp = utcTimestamp / 1000;
+        addOutput("Chart timestamp (seconds): " + chartTimestamp);
+        
+        // Convert back to date for verification
+        const chartDate = new Date(chartTimestamp * 1000);
+        addOutput("Chart date verification: " + chartDate);
+        addOutput("Chart date in ET: " + chartDate.toLocaleString('en-US', {timeZone: 'America/New_York'}));
+        
+        // Test with a simpler approach
+        addOutput("=== Testing Simpler Approach ===");
+        const simpleDate = new Date(csvTimestamp + " EST");
+        addOutput("CSV with EST suffix: " + simpleDate);
+        addOutput("Simple date in ET: " + simpleDate.toLocaleString('en-US', {timeZone: 'America/New_York'}));
+    </script>
+</body>
+</html>

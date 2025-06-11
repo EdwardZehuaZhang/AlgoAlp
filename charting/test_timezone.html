@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Timezone Test</title>
+</head>
+<body>
+    <h1>Timezone Parsing Test</h1>
+    <div id="output"></div>
+
+    <script type="module">
+        import { DataUtils } from './assets/js/utils.js';
+
+        const output = document.getElementById('output');
+        
+        // Test CSV parsing with sample data
+        const testCSV = `time,open,high,low,close,volume
+2025-05-15 09:30:00,520.50,521.00,520.00,520.75,1000000
+2025-05-15 09:35:00,520.75,521.25,520.25,521.00,800000
+2025-05-15 14:30:00,522.00,522.50,521.50,522.25,1200000`;
+
+        console.log('Testing CSV parsing...');
+        const data = DataUtils.parseCSV(testCSV);
+        
+        let html = '<h2>Test Results:</h2>';
+        data.forEach((item, index) => {
+            const date = new Date(item.time * 1000);
+            const etTime = date.toLocaleString('en-US', {timeZone: 'America/New_York'});
+            const localTime = date.toLocaleString();
+            
+            html += `<p><strong>Entry ${index + 1}:</strong><br>`;
+            html += `Timestamp: ${item.time}<br>`;
+            html += `Eastern Time: ${etTime}<br>`;
+            html += `Local Time: ${localTime}<br>`;
+            html += `Open: ${item.open}, Close: ${item.close}</p>`;
+        });
+        
+        output.innerHTML = html;
+    </script>
+</body>
+</html>

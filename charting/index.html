@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SPY Multi-Chart with SMA</title>
+    
+    <!-- External Dependencies -->
+    <script src="https://unpkg.com/lightweight-charts@5.0.0/dist/lightweight-charts.standalone.production.js"></script>
+    
+    <!-- Application Styles -->
+    <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1 class="chart-title">SPY Historical Data: 2-Year CSV Dataset vs Live Polygon API (Synchronized View)</h1>
+        
+        <div class="data-source-selector">
+            <button id="btn-load-both" class="active">Load Both Sources</button>
+            <button id="btn-csv-only">CSV Only</button>
+            <button id="btn-polygon-only">Polygon Only</button>
+        </div>
+          <div id="main-chart-container">
+            <div class="chart-label">Synchronized Chart: CSV (Historical 2-Year) + Polygon (Recent)</div>
+            <div class="loading" id="main-loading">Loading CSV data...</div>
+            <div class="loading" id="sub-loading" style="top: 60%; display: none;">Loading Polygon data...</div>
+        </div>
+    </div>
+
+    <!-- Application Scripts -->
+    <script type="module" src="assets/js/app.js"></script>
+</body>
+</html>
