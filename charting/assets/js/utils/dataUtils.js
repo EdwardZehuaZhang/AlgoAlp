@@ -119,9 +119,23 @@ export class DataUtils {
         // First, sort the data by timestamp
         const sortedData = [...apiData].sort((a, b) => a.t - b.t);
         
-        // Organize data by day
+        // Organize data by day, but filter data to start at 9:30 AM ET (ignoring pre-market)
         for (const item of sortedData) {
             const date = new Date(item.t);
+            
+            // Filter based on Eastern Time hour
+            // For Eastern Time (EDT), UTC 13:30 = 9:30 AM ET
+            const utcHours = date.getUTCHours();
+            const utcMinutes = date.getUTCMinutes();
+            
+            // Skip data that comes before 9:30 AM ET (which is 13:30 UTC during EDT)
+            // We're looking for Polygon data that starts at exactly market open
+            if (utcHours < 9 || (utcHours === 9 && utcMinutes < 30)) {
+                // This is data before 9:30 AM ET, skip it
+                console.log(`Skipping pre-market data point at UTC ${utcHours}:${utcMinutes}`);
+                continue;
+            }
+            
             const dateKey = `${date.getUTCFullYear()}-${date.getUTCMonth()}-${date.getUTCDate()}`;
             
             if (!dayGroups[dateKey]) {
