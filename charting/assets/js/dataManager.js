@@ -1,12 +1,14 @@
 // Data loading and API management
 
 import { CONFIG } from './config.js';
-import { DataUtils } from './utils.js';
+import { DataUtils, IndicatorUtils, MarkerUtils, TimeUtils } from './utils.js';
 
 export class DataManager {
     constructor(chartManager) {
         this.chartManager = chartManager;
-    }    /**
+    }
+    
+    /**
      * Load data from CSV file
      */
     async loadCSVData() {
@@ -27,110 +29,93 @@ export class DataManager {
             }
             
             // Calculate SMAs for full dataset
-            const sma20Data = DataUtils.calculateSMA(data, CONFIG.SMA_PERIODS.SHORT);
-            const sma50Data = DataUtils.calculateSMA(data, CONFIG.SMA_PERIODS.LONG);
+            const sma20Data = IndicatorUtils.calculateSMA(data, CONFIG.SMA_PERIODS.SHORT);
+            const sma50Data = IndicatorUtils.calculateSMA(data, CONFIG.SMA_PERIODS.LONG);
+            const sma200Data = IndicatorUtils.calculateSMA(data, CONFIG.SMA_PERIODS.EXTRA_LONG);
             
-            console.log('CSV - SMA calculations: SMA20:', sma20Data.length, 'SMA50:', sma50Data.length);
+            // Calculate MACD for third pane (complete MACD with all components)
+            const macdData = IndicatorUtils.calculateMACDComplete(data);
+              
+            // Calculate dynamic bar colors based on SMA crossovers
+            const coloringResult = IndicatorUtils.calculateBarColors(data, sma50Data, sma200Data);
+            const crossoverMarkers = MarkerUtils.createCrossoverMarkers(coloringResult.crossovers);
             
-            // Update chart with full dataset
-            this.chartManager.updateCSVChart(data, sma20Data, sma50Data);
+            console.log('CSV - SMA calculations: SMA20:', sma20Data.length, 'SMA50:', sma50Data.length, 'SMA200:', sma200Data.length);
+            console.log('CSV - MACD data: Histogram:', macdData.histogram.length, 'MACD Line:', macdData.macdLine.length, 'Signal Line:', macdData.signalLine.length);
+            console.log('CSV - Bar coloring: Applied colors to', coloringResult.coloredData.length, 'bars, found', coloringResult.crossovers.length, 'crossovers');
+            
+            // Update chart with colored data and markers
+            this.chartManager.updateCSVChart(coloringResult.coloredData, sma20Data, sma50Data, sma200Data, crossoverMarkers);
+            
+            // Update MACD chart with all components
+            this.chartManager.updateMACDChart(macdData.histogram, macdData.macdLine, macdData.signalLine);
             
         } catch (error) {
             console.error('Error loading CSV data:', error);
             document.getElementById('main-loading').textContent = 'Error loading CSV data. Check console for details.';
         }
     }
-      /**
+    
+    /**
      * Load data from Polygon API
      */
     async loadPolygonData() {
         try {
-            console.log(`Fetching Polygon data from ${CONFIG.DATE_RANGE.START} to ${CONFIG.DATE_RANGE.END}`);
-            console.log('Note: Polygon free tier may not return all requested historical data');
+            console.log('Loading Polygon data...');
+            const apiKey = CONFIG.POLYGON_API_KEY;
+            const startDate = CONFIG.DATE_RANGE.START;
+            const endDate = CONFIG.DATE_RANGE.END;
+            const symbol = 'SPY';
+            const multiplier = 5;
+            const timespan = 'minute';
             
-            const url = `https://api.polygon.io/v2/aggs/ticker/SPY/range/5/minute/${CONFIG.DATE_RANGE.START}/${CONFIG.DATE_RANGE.END}`;
+            const url = `https://api.polygon.io/v2/aggs/ticker/${symbol}/range/${multiplier}/${timespan}/${startDate}/${endDate}?apiKey=${apiKey}&limit=50000`;
             
-            const params = new URLSearchParams({
-                adjusted: 'true',
-                sort: 'asc',
-                limit: '50000',
-                apiKey: CONFIG.POLYGON_API_KEY
-            });
+            console.log('Polygon API URL:', url);
+            document.getElementById('sub-loading').textContent = 'Fetching data from Polygon API...';
             
-            console.log(`Requesting: ${url}?${params.toString().replace(CONFIG.POLYGON_API_KEY, 'API_KEY_HIDDEN')}`);
+            const response = await fetch(url);
+            const apiData = await response.json();
             
-            const response = await fetch(`${url}?${params.toString()}`);
-            const json = await response.json();
-            
-            console.log('Polygon API response status:', json.status);
-            
-            if (json.results && json.results.length > 0) {
-                console.log(`Received ${json.results.length} data points from Polygon API`);
-                console.log('Polygon API data range:', 
-                    new Date(json.results[0].t).toDateString(), 
-                    'to', 
-                    new Date(json.results[json.results.length-1].t).toDateString()
-                );
-                
-                // Show debug info
-                this.showDebugInfo(`Polygon: ${json.results.length} points (${new Date(json.results[0].t).toDateString()} - ${new Date(json.results[json.results.length-1].t).toDateString()})`);
-                
-                // Filter market hours
-                const filteredData = DataUtils.filterMarketHours(
-                    json.results, 
-                    CONFIG.MARKET_HOURS.OPEN_MINUTES, 
-                    CONFIG.MARKET_HOURS.CLOSE_MINUTES
-                );
-                
-                console.log(`Filtered to ${filteredData.length} data points (market hours only)`);
-                
-                // Transform data
-                const data = DataUtils.transformPolygonData(filteredData);
-                
-                console.log('Polygon - Processed data points:', data.length);
-                if (data.length > 0) {
-                    console.log('Polygon - First processed date:', new Date(data[0].time * 1000).toDateString());
-                    console.log('Polygon - Last processed date:', new Date(data[data.length-1].time * 1000).toDateString());
-                }
-                
-                // Calculate SMAs
-                const sma20Data = DataUtils.calculateSMA(data, CONFIG.SMA_PERIODS.SHORT);
-                const sma50Data = DataUtils.calculateSMA(data, CONFIG.SMA_PERIODS.LONG);
-                
-                // Update chart
-                this.chartManager.updatePolygonChart(data, sma20Data, sma50Data);
-                
-            } else {
-                console.warn('No results in Polygon API response. This might be due to:');
-                console.warn('1. Free tier limits (typically ~2 years of data)');
-                console.warn('2. Requested date range is too old');
-                console.warn('3. API rate limits or other restrictions');
-                
-                // Show message on chart
-                document.getElementById('sub-loading').textContent = 'No data available from Polygon API (free tier limits)';
-                
-                // Update debug info
-                this.showDebugInfo('Polygon: No data (API limits)');
+            if (apiData.status === 'ERROR' || !apiData.results) {
+                throw new Error(apiData.error || 'Unknown API error');
             }
+            
+            document.getElementById('sub-loading').textContent = 'Processing Polygon data...';
+            
+            // Transform API data to chart format
+            const data = DataUtils.transformPolygonData(apiData.results);
+            console.log('Polygon data loaded:', data.length, 'total points');
+            
+            if (data.length > 0) {
+                console.log('Polygon - First timestamp (raw):', data[0].time);
+                console.log('Polygon - First timestamp (date):', new Date(data[0].time * 1000));
+                console.log('Polygon - Last timestamp (date):', new Date(data[data.length-1].time * 1000));
+                console.log('Polygon - Date range:', new Date(data[0].time * 1000).toDateString(), 'to', new Date(data[data.length-1].time * 1000).toDateString());
+            }
+            
+            // Filter to market hours only
+            const marketHoursData = DataUtils.filterMarketHours(data);
+            console.log('Filtered to market hours:', marketHoursData.length, 'data points');
+                    
+            // Calculate SMAs for Polygon data
+            const sma20Data = IndicatorUtils.calculateSMA(marketHoursData, CONFIG.SMA_PERIODS.SHORT);
+            const sma50Data = IndicatorUtils.calculateSMA(marketHoursData, CONFIG.SMA_PERIODS.LONG);
+            const sma200Data = IndicatorUtils.calculateSMA(marketHoursData, CONFIG.SMA_PERIODS.EXTRA_LONG);
+            
+            console.log('Polygon - SMA calculations: SMA20:', sma20Data.length, 'SMA50:', sma50Data.length, 'SMA200:', sma200Data.length);
+                
+            // Update chart with Polygon data
+            this.chartManager.updatePolygonChart(marketHoursData, sma20Data, sma50Data, sma200Data);
             
         } catch (error) {
             console.error('Error loading Polygon data:', error);
-            document.getElementById('sub-loading').textContent = 'Error loading data from Polygon. Check console for details.';
+            document.getElementById('sub-loading').textContent = 'Error loading Polygon data. Check console for details.';
+            
+            // If this is a rate limit error or authentication error, provide specific guidance
+            if (error.message && (error.message.includes('rate limit') || error.message.includes('auth'))) {
+                document.getElementById('sub-loading').textContent += ' API key may be invalid or rate limited.';
+            }
         }
-    }
-    
-    /**
-     * Show debug information on screen
-     * @param {string} message - Debug message to display
-     */
-    showDebugInfo(message) {
-        let debugDiv = document.getElementById('polygon-debug');
-        if (!debugDiv) {
-            debugDiv = document.createElement('div');
-            debugDiv.id = 'polygon-debug';
-            debugDiv.className = 'debug-info';
-            document.body.appendChild(debugDiv);
-        }
-        debugDiv.textContent = message;
     }
 }

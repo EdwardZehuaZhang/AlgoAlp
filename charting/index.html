@@ -25,9 +25,17 @@
             <div class="loading" id="main-loading">Loading CSV data...</div>
             <div class="loading" id="sub-loading" style="top: 60%; display: none;">Loading Polygon data...</div>
         </div>
-    </div>
-
-    <!-- Application Scripts -->
+    </div>    <!-- Application Scripts -->
     <script type="module" src="assets/js/app.js"></script>
+    
+    <!-- Debug info in console -->
+    <script>
+        console.log('Lightweight Charts version:', LightweightCharts ? LightweightCharts.version() : 'not loaded');
+        
+        // Detailed error handling for better debugging
+        window.addEventListener('error', function(e) {
+            console.error('Global error caught:', e.message, e.filename, 'Line:', e.lineno, 'Column:', e.colno, e.error);
+        });
+    </script>
 </body>
 </html>

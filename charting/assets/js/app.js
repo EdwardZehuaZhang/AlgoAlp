@@ -49,28 +49,31 @@ class SpyChartApp {
         // Show loading messages
         if (source === 'both' || source === 'csv') {
             document.getElementById('main-loading').style.display = 'block';
-            document.getElementById('main-loading').textContent = 'Loading CSV data...';
         }
+        
         if (source === 'both' || source === 'polygon') {
             document.getElementById('sub-loading').style.display = 'block';
             document.getElementById('sub-loading').textContent = 'Loading Polygon data...';
         }
         
-        // Load data from selected source(s)
-        if (source === 'both') {
+        // Clear any existing data
+        this.chartManager.clearCharts();
+        
+        // Load the requested data sources
+        if (source === 'both' || source === 'csv') {
             this.dataManager.loadCSVData();
-            this.dataManager.loadPolygonData();
-        } else if (source === 'csv') {
-            this.dataManager.loadCSVData();
-            this.chartManager.clearPolygonChart();
-        } else if (source === 'polygon') {
-            this.dataManager.loadPolygonData();
-            this.chartManager.clearCSVChart();
         }
+        
+        if (source === 'both' || source === 'polygon') {
+            this.dataManager.loadPolygonData();
+        }
+        
+        // Show/hide series based on selected data source
+        this.chartManager.showDataSource(source);
     }
 }
 
-// Initialize the application when DOM is loaded
+// Initialize the application when the DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     const app = new SpyChartApp();
     app.init();

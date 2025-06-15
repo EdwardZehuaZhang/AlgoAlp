@@ -22,7 +22,9 @@ body {
 }
 
 #main-chart-container {
-    height: 80%;  /* Increased height since we're only using one container */
+    flex: 1;
+    min-height: 600px;  /* Minimum height for the chart container */
+    height: 80vh;  /* Use viewport height to ensure proper sizing */
     position: relative;
     margin-bottom: 10px;
 }
