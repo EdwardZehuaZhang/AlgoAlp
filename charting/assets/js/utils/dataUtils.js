@@ -182,18 +182,22 @@ export class DataUtils {
                 const timeValue = Date.UTC(year, month, day, displayHour, displayMinute, 0);
                 const timestamp = Math.floor(timeValue / 1000);
                 
+                // Store original timestamp for accurate event timings (like crossovers)
+                const originalTimestamp = Math.floor(item.t / 1000);
+                
                 // Debug log for the first few items of each day
                 if (index < 3) {
-                    console.log(`Day ${year}-${month+1}-${day}, Candle #${index+1}: ${displayHour}:${displayMinute} -> timestamp ${timestamp}`);
+                    console.log(`Day ${year}-${month+1}-${day}, Candle #${index+1}: ${displayHour}:${displayMinute} -> timestamp ${timestamp} (original: ${originalTimestamp})`);
                 }
                 
                 resultData.push({
-                    time: timestamp,
+                    time: timestamp,             // Display timestamp (for chart visualization)
                     open: item.o,
                     high: item.h,
                     low: item.l,
                     close: item.c,
-                    volume: item.v
+                    volume: item.v,
+                    originalTime: originalTimestamp  // Original timestamp (for accurate event timings)
                 });
             });
         }

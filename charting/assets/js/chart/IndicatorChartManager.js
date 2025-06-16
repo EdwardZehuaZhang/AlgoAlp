@@ -272,4 +272,52 @@ export class IndicatorChartManager extends BaseChartManager {
             return false;
         }
     }
+    
+    /**
+     * Add MACD crossover markers to the MACD line
+     * @param {Array} markers - Array of marker objects
+     * @returns {Object|null} The markers plugin or null if failed
+     */
+    addMACDMarkers(markers) {
+        if (!this.chart) {
+            console.error('Cannot add MACD markers: Chart not initialized');
+            return null;
+        }
+        
+        const macdIndicator = this.indicators.get('macd');
+        
+        if (!macdIndicator || !macdIndicator.components || !macdIndicator.components.macdLine) {
+            console.error('Cannot add MACD markers: MACD indicator not found');
+            return null;
+        }
+        
+        const macdLineSeries = macdIndicator.components.macdLine;
+        console.log('Adding MACD markers to MACD line series');
+        
+        try {            // Try to use window.createSeriesMarkers (which we exposed in index.html)
+            if (typeof window.createSeriesMarkers === 'function') {
+                console.log('Using window.createSeriesMarkers');
+                return window.createSeriesMarkers(macdLineSeries, markers);
+            }
+            
+            // Try directly from LightweightCharts global object
+            if (typeof LightweightCharts !== 'undefined' && typeof LightweightCharts.createSeriesMarkers === 'function') {
+                console.log('Using LightweightCharts.createSeriesMarkers');
+                return LightweightCharts.createSeriesMarkers(macdLineSeries, markers);
+            }
+            
+            // Try to use setMarkers method directly if available
+            if (macdLineSeries && typeof macdLineSeries.setMarkers === 'function') {
+                console.log('Using macdLineSeries.setMarkers directly');
+                macdLineSeries.setMarkers(markers);
+                return { markers };
+            }
+            
+            console.error('No method available to add MACD markers');
+            return null;
+        } catch (error) {
+            console.error('Error adding MACD markers:', error);
+            return null;
+        }
+    }
 }

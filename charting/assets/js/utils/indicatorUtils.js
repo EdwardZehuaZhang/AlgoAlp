@@ -83,20 +83,20 @@ export class IndicatorUtils {
         for (let i = 0; i < data.length; i++) {
             if (fastEMA[i] !== undefined && slowEMA[i] !== undefined) {
                 const macdValue = fastEMA[i] - slowEMA[i];
-                macdValues.push(macdValue);
-                macdLineData.push({
+                macdValues.push(macdValue);                macdLineData.push({
                     time: data[i].time,
-                    value: macdValue
+                    value: macdValue,
+                    originalTime: data[i].originalTime || data[i].time // Preserve original timestamp if available
                 });
             } else {
                 macdValues.push(undefined);
             }
         }
-        
-        // Create temporary data array for signal EMA calculation
+          // Create temporary data array for signal EMA calculation
         const macdData = macdValues.map((value, index) => ({
             close: value,
-            time: data[index].time
+            time: data[index].time,
+            originalTime: data[index].originalTime || data[index].time // Preserve original timestamp
         })).filter(item => item.close !== undefined);
         
         // Calculate Signal line (EMA of MACD)
@@ -107,11 +107,11 @@ export class IndicatorUtils {
         const histogramData = [];
         
         for (let i = 0; i < data.length; i++) {
-            if (macdValues[i] !== undefined && signalEMAValues[i] !== undefined) {
-                // Signal line data
+            if (macdValues[i] !== undefined && signalEMAValues[i] !== undefined) {                // Signal line data
                 signalLineData.push({
                     time: data[i].time,
-                    value: signalEMAValues[i]
+                    value: signalEMAValues[i],
+                    originalTime: data[i].originalTime || data[i].time // Preserve original timestamp
                 });
                 
                 // Histogram data (MACD - Signal)
@@ -119,7 +119,8 @@ export class IndicatorUtils {
                 histogramData.push({
                     time: data[i].time,
                     value: histogram,
-                    color: histogram >= 0 ? '#26a69a' : '#ef5350' // Green for positive, red for negative
+                    color: histogram >= 0 ? '#26a69a' : '#ef5350', // Green for positive, red for negative
+                    originalTime: data[i].originalTime || data[i].time // Preserve original timestamp
                 });
             }
         }

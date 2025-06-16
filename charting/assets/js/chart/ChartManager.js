@@ -4,6 +4,7 @@ import { CONFIG } from '../config.js';
 import { PriceChartManager } from './PriceChartManager.js';
 import { IndicatorChartManager } from './IndicatorChartManager.js';
 import { ChartInteractionManager } from './ChartInteractionManager.js';
+import { MarkerUtils } from '../utils/markerUtils.js';
 
 export class ChartManager {
     constructor() {
@@ -371,11 +372,11 @@ export class ChartManager {
                 return;
             }
         }
-        
-        // Apply the same 4-hour shift to MACD data
-        const shiftedHistogram = this._shiftTimestamps(histogramData);
-        const shiftedMacdLine = this._shiftTimestamps(macdLineData);
-        const shiftedSignalLine = this._shiftTimestamps(signalLineData);
+          // Apply the same 4-hour shift to MACD data
+        // But preserve the original timestamps in a separate field for crossover detection
+        const shiftedHistogram = this._shiftTimestamps(histogramData, 4, true);
+        const shiftedMacdLine = this._shiftTimestamps(macdLineData, 4, true);
+        const shiftedSignalLine = this._shiftTimestamps(signalLineData, 4, true);
         
         // Now attempt to update the MACD data
         try {
@@ -394,8 +395,7 @@ export class ChartManager {
                 console.log('Updating MACD signal line directly');
                 this.macdSignalSeries.setData(shiftedSignalLine);
             }
-            
-            // Try through the indicator chart's update method
+              // Try through the indicator chart's update method
             try {
                 this.indicatorChart.updateMACDData(histogramData, macdLineData, signalLineData);
             } catch (error) {
@@ -403,18 +403,99 @@ export class ChartManager {
                 // Already tried direct updates above, so not doing anything else here
             }
             
+            // Add MACD crossover markers if we have both line series
+            if (shiftedMacdLine && shiftedMacdLine.length > 0 && 
+                shiftedSignalLine && shiftedSignalLine.length > 0) {
+                // We need to pass the original (unshifted) data since the addMACDMarkers method 
+                // will apply the time shift internally
+                this.addMACDMarkers(macdLineData, signalLineData);
+            }
+            
         } catch (error) {
             console.error('Error updating MACD chart:', error);
         }
-    }
-    
-    /**
+    }    /**
      * Add MACD crossover markers
      * @param {Array} macdLineData - MACD line data
      * @param {Array} signalLineData - Signal line data
      */
     addMACDMarkers(macdLineData, signalLineData) {
-        // Not implemented in this version
+        if (!macdLineData || !signalLineData || macdLineData.length === 0 || signalLineData.length === 0) {
+            console.log('Cannot add MACD markers: Missing or empty data');
+            return;
+        }
+        
+        console.log('Adding MACD crossover markers...');
+        
+        try {
+            // Calculate crossover points
+            const crossovers = MarkerUtils.calculateMACDCrossovers(macdLineData, signalLineData);
+            console.log(`Found ${crossovers.length} MACD crossovers`);
+            
+            if (crossovers.length === 0) {
+                console.log('No MACD crossovers found - nothing to display');
+                return;
+            }
+              // Don't apply time shift here - use the correct display time that's already set
+            // This is crucial - the time in crossovers already matches our chart display time
+            const shiftedCrossovers = crossovers;
+            
+            // Log some crossovers for debugging
+            if (shiftedCrossovers.length > 0) {
+                console.log('First few MACD crossovers:');
+                shiftedCrossovers.slice(0, 3).forEach((c, i) => {
+                    console.log(`Crossover ${i+1} - ${c.type} at ${new Date(c.time * 1000).toLocaleTimeString()}`);
+                });
+            }
+            
+            // Create formatted markers for the chart
+            const markers = MarkerUtils.createMACDCrossoverMarkers(shiftedCrossovers);
+            
+            if (!this.macdLineSeries) {
+                console.warn('MACD line series not available for setting markers');
+                return;
+            }
+            
+            // Store marker reference
+            this.macdMarkers = markers;
+            
+            // Use the proper createSeriesMarkers function from the LightweightCharts library
+            // This is the key change - using createSeriesMarkers instead of setMarkers
+            try {
+                console.log('Applying MACD crossovers using createSeriesMarkers...');
+                console.log('Markers:', markers.slice(0, 3)); // Log first few markers for debug
+                  if (typeof window.createSeriesMarkers === 'function') {
+                    // Use the global createSeriesMarkers function
+                    console.log('Using global window.createSeriesMarkers function');
+                    this.macdMarkersPlugin = window.createSeriesMarkers(this.macdLineSeries, markers);
+                    console.log('MACD markers successfully created with createSeriesMarkers');
+                } else {
+                    console.warn('createSeriesMarkers function not available, trying alternative method');
+                    
+                    // Fall back to direct method if available
+                    if (typeof this.macdLineSeries.setMarkers === 'function') {
+                        this.macdLineSeries.setMarkers(markers);
+                        console.log('MACD markers set with direct setMarkers method');
+                    } else if (this.indicatorChart && typeof this.indicatorChart.addMACDMarkers === 'function') {
+                        // Try through the indicator chart if it has a method for it
+                        this.indicatorChart.addMACDMarkers(markers);
+                        console.log('MACD markers added through indicator chart');
+                    } else {
+                        console.error('No method available to add MACD markers');
+                    }
+                }
+            } catch (markerError) {
+                console.error('Error applying MACD markers:', markerError);
+                
+                // Last resort: try the older _setMarkersSafely method
+                console.log('Attempting to set MACD crossover markers through wrapper');
+                this._setMarkersSafely(this.macdLineSeries, markers, 'macd_line');
+            }
+            
+            console.log(`MACD crossover markers added: ${markers.length} markers`);
+        } catch (error) {
+            console.error('Error adding MACD crossover markers:', error);
+        }
     }
     
     /**
@@ -521,15 +602,15 @@ export class ChartManager {
             return false;
         }
     }
-    
-    /**
+      /**
      * Helper method to shift timestamps by a fixed offset (for timezone correction)
      * @param {Array} data - Data points with time field
      * @param {number} hourOffset - Hours to subtract from timestamp (default 4 for ET adjustment)
+     * @param {boolean} preserveOriginal - Whether to preserve original timestamps in a separate field (default false)
      * @returns {Array} New array with adjusted timestamps
      * @private
      */
-    _shiftTimestamps(data, hourOffset = 4) {
+    _shiftTimestamps(data, hourOffset = 4, preserveOriginal = false) {
         if (!data || data.length === 0) return [];
         
         // Calculate the offset in seconds
@@ -539,6 +620,11 @@ export class ChartManager {
         return data.map(item => {
             // Create a shallow copy of the item
             const adjusted = { ...item };
+            
+            // If we should preserve the original time, store it before modifying
+            if (preserveOriginal) {
+                adjusted.originalTime = item.originalTime || item.time;
+            }
             
             // Subtract the offset from the timestamp
             adjusted.time = item.time - offsetSeconds;

@@ -70,15 +70,26 @@ export class DataManager {
             const timespan = 'minute';
             
             const url = `https://api.polygon.io/v2/aggs/ticker/${symbol}/range/${multiplier}/${timespan}/${startDate}/${endDate}?apiKey=${apiKey}&limit=50000`;
-            
-            console.log('Polygon API URL:', url);
+              console.log('Polygon API URL:', url);
             document.getElementById('sub-loading').textContent = 'Fetching data from Polygon API...';
-            
-            const response = await fetch(url);
-            const apiData = await response.json();
-            
-            if (apiData.status === 'ERROR' || !apiData.results) {
-                throw new Error(apiData.error || 'Unknown API error');
+              let apiData;
+            try {
+                const response = await fetch(url);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error: ${response.status} - ${response.statusText}`);
+                }
+                
+                apiData = await response.json();
+                
+                if (apiData.status === 'ERROR' || !apiData.results) {
+                    throw new Error(apiData.error || 'Unknown API error');
+                }
+            } catch (networkError) {
+                console.error('Network error when fetching Polygon data:', networkError);
+                document.getElementById('sub-loading').textContent = 'Polygon API connection failed. Internet connection issue or API may be down.';
+                // Return early since we can't proceed without data
+                return;
             }
             
             document.getElementById('sub-loading').textContent = 'Processing Polygon data...';
