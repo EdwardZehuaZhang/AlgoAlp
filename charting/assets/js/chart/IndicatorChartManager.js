@@ -3,6 +3,43 @@
 import { BaseChartManager } from './BaseChartManager.js';
 import { CONFIG } from '../config.js';
 
+try {
+    if (timeRange) {
+        const oversoldData = [
+            { time: timeRange.from, value: 30 },
+            { time: timeRange.to, value: 30 }
+        ];
+
+        const overboughtData = [
+            { time: timeRange.from, value: 70 },
+            { time: timeRange.to, value: 70 }
+        ];
+
+        overboughtLevel.setData(overboughtData);
+        oversoldLevel.setData(oversoldData);
+    } else {
+        // Fallback to hardcoded range (will be updated when data arrives)
+        const now = Math.floor(Date.now() / 1000);
+        const oneYearAgo = now - (365 * 24 * 60 * 60);
+
+        const overboughtData = [
+            { time: oneYearAgo, value: 70 },
+            { time: now, value: 70 }
+        ];
+
+        const oversoldData = [
+            { time: oneYearAgo, value: 30 },
+            { time: now, value: 30 }
+        ];
+
+        overboughtLevel.setData(overboughtData);
+        oversoldLevel.setData(oversoldData);
+    }
+} catch (error) {
+    console.error('Error setting RSI level lines:', error);
+}
+
+
 export class IndicatorChartManager extends BaseChartManager {
     constructor() {
         super();
@@ -73,8 +110,7 @@ export class IndicatorChartManager extends BaseChartManager {
         
         return macdComponents;
     }
-    
-    /**
+      /**
      * Add an RSI indicator to the chart
      * @param {number} paneIndex - Pane index for the indicator
      * @param {Object} options - RSI options
@@ -97,6 +133,13 @@ export class IndicatorChartManager extends BaseChartManager {
             },
             title: 'RSI (14)',
             lastValueVisible: true,
+            // Ensure the scale range is appropriate for RSI
+            autoscaleInfoProvider: () => ({
+                priceRange: {
+                    minValue: 0,
+                    maxValue: 100
+                }
+            })
         };
         
         // Merge options
@@ -128,26 +171,40 @@ export class IndicatorChartManager extends BaseChartManager {
             lastValueVisible: false,
             title: 'Oversold',
         }, paneIndex);
+          // Set constant levels with fixed timestamps that cover a wide range
+        const now = Math.floor(Date.now() / 1000);
+        const twoYearsAgo = now - (2 * 365 * 24 * 60 * 60); // 2 years ago
         
-        // Set constant levels
-        const timeRange = this.chart.timeScale().getVisibleLogicalRange();
-        if (timeRange) {
-            // Use the visible time range
-            const overboughtData = [
-                { time: timeRange.from, value: 70 },
-                { time: timeRange.to, value: 70 }
-            ];
-            
-            const oversoldData = [
-                { time: timeRange.from, value: 30 },
-                { time: timeRange.to, value: 30 }
-            ];
-            
-            overboughtLevel.setData(overboughtData);
-            oversoldLevel.setData(oversoldData);
-        }
+        // Use static timeframe that covers a wide range
+        const overboughtData = [
+            { time: twoYearsAgo, value: 70 },
+            { time: now, value: 70 }
+        ];
+        
+        const oversoldData = [
+            { time: twoYearsAgo, value: 30 },
+            { time: now, value: 30 }
+        ];
+        
+        // Set the level data
+        overboughtLevel.setData(overboughtData);
+        oversoldLevel.setData(oversoldData);
+        
+        // Create components object to return
+        const rsiComponents = {
+            rsi: rsiSeries,
+            overboughtLevel: overboughtLevel,
+            oversoldLevel: oversoldLevel
+        };
         
         // Store the RSI indicator
+        this.indicators.set('rsi', {
+            type: 'rsi',
+            components: rsiComponents,
+            paneIndex
+        });
+        
+        return rsiComponents;
         this.indicators.set('rsi', {
             type: 'rsi',
             components: {
@@ -203,45 +260,58 @@ export class IndicatorChartManager extends BaseChartManager {
             return false;
         }
     }
-    
-    /**
+      /**
      * Update RSI data
-     * @param {Array} rsiData - RSI data points
+     * @param {Array} rsiData - RSI data points (should be filtered to market hours)
      */
     updateRSIData(rsiData) {
-        if (!this.indicators.has('rsi')) {
-            console.error('RSI indicator not found');
-            return false;
+        if (!rsiData || rsiData.length === 0) {
+            console.log('No RSI data provided to update');
+            return;
         }
         
-        try {
-            const rsiComponents = this.indicators.get('rsi').components;
+        const rsiIndicator = this.indicators.get('rsi');
+        
+        if (!rsiIndicator || !rsiIndicator.components || !rsiIndicator.components.rsi) {
+            console.log('RSI indicator not found, creating it now');
+            const components = this.addRSIIndicator(3); // Use pane index 3 (fourth pane)
             
-            if (rsiData && rsiData.length > 0) {
-                rsiComponents.main.setData(rsiData);
-                
-                // Update overbought/oversold lines to match time range
-                const timeStart = rsiData[0].time;
-                const timeEnd = rsiData[rsiData.length - 1].time;
-                
-                const overboughtData = [
-                    { time: timeStart, value: 70 },
-                    { time: timeEnd, value: 70 }
-                ];
-                
-                const oversoldData = [
-                    { time: timeStart, value: 30 },
-                    { time: timeEnd, value: 30 }
-                ];
-                
-                rsiComponents.overbought.setData(overboughtData);
-                rsiComponents.oversold.setData(oversoldData);
+            if (!components || !components.rsi) {
+                console.error('Failed to create RSI indicator components');
+                return;
             }
             
-            return true;
+            console.log(`Updating RSI data with ${rsiData.length} points`);
+            components.rsi.setData(rsiData);
+            return;
+        }
+        
+        // Set the RSI data
+        console.log(`Updating RSI data with ${rsiData.length} points`);
+        rsiIndicator.components.rsi.setData(rsiData);
+        
+        // Ensure the price scale is fixed for RSI (0-100)
+        try {
+            const paneOptions = {
+                scaleMargins: {
+                    top: 0.1,
+                    bottom: 0.1,
+                }
+            };
+            
+            // Try to apply to the rsi component directly
+            if (rsiIndicator.components.rsi.applyOptions) {
+                rsiIndicator.components.rsi.applyOptions({
+                    autoscaleInfoProvider: () => ({
+                        priceRange: {
+                            minValue: 0,
+                            maxValue: 100
+                        }
+                    })
+                });
+            }
         } catch (error) {
-            console.error('Error updating RSI data:', error);
-            return false;
+            console.warn('Could not fix RSI price scale:', error);
         }
     }
     

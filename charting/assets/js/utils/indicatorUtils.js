@@ -144,17 +144,19 @@ export class IndicatorUtils {
     static calculateMACDHistogram(data, fastPeriod = 12, slowPeriod = 26, signalPeriod = 9) {
         return this.calculateMACDComplete(data, fastPeriod, slowPeriod, signalPeriod).histogram;
     }
-    
-    /**
+      /**
      * Calculate Relative Strength Index (RSI)
-     * @param {Array} data - Array of price data points
+     * @param {Array} data - Array of price data points (should already be filtered for market hours)
      * @param {number} period - RSI period (default: 14)
      * @returns {Array} Array of RSI data points
      */
     static calculateRSI(data, period = 14) {
         if (!data || data.length <= period) {
+            console.warn(`Not enough data points for ${period}-period RSI calculation (need > ${period}, have ${data?.length || 0})`);
             return [];
         }
+        
+        console.log(`Calculating ${period}-period RSI for ${data.length} data points`);
         
         const rsiData = [];
         const gains = [];
@@ -300,28 +302,33 @@ export class IndicatorUtils {
                     }
                 }
             }
+              // Assign color based on market state and price action
+            // Following the exact logic provided:
+            // 1. If bullish market (after golden cross):
+            //    - Yellow/Gold if price is above both SMAs
+            //    - Gray otherwise
+            // 2. If bearish market (after death cross):
+            //    - Red/Maroon if price is below both SMAs
+            //    - Gray otherwise
+            // 3. Default to standard coloring if market state not yet determined
             
-            // Assign color based on market state and price action
             let barColor = GRAY_COLOR; // Default to gray
             
-            if (isBullish) {
+            if (isBullish === true) { // Explicitly true, market is in bullish state after golden cross
                 if (currentBar.close > sma50Value && currentBar.close > sma200Value) {
-                    barColor = GOLD_COLOR; // Bullish and above both SMAs
-                } else if (currentBar.close > sma50Value) {
-                    barColor = '#00FF00'; // Bullish and above 50 SMA
+                    barColor = GOLD_COLOR; // Bullish and price above both SMAs
                 } else {
-                    barColor = currentBar.close >= currentBar.open ? '#00BB00' : '#FF6666';
+                    barColor = GRAY_COLOR; // Bullish but price not above both SMAs
                 }
-            } else if (isBullish === false) { // Explicitly false, not null
+            } else if (isBullish === false) { // Explicitly false, market is in bearish state after death cross
                 if (currentBar.close < sma50Value && currentBar.close < sma200Value) {
-                    barColor = RED_COLOR; // Bearish and below both SMAs
-                } else if (currentBar.close < sma50Value) {
-                    barColor = '#FF3333'; // Bearish and below 50 SMA
+                    barColor = RED_COLOR; // Bearish and price below both SMAs
                 } else {
-                    barColor = currentBar.close >= currentBar.open ? '#00BB00' : '#FF6666';
+                    barColor = GRAY_COLOR; // Bearish but price not below both SMAs
                 }
             } else {
-                // No market state detected yet, use standard coloring
+                // No market state determined yet (no crossovers detected)
+                // Use standard green/red coloring based on candle direction
                 barColor = currentBar.close >= currentBar.open ? '#00BB00' : '#FF6666';
             }
             

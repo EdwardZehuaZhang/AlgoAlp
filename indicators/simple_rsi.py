@@ -1,18 +1,3 @@
-#!/usr/bin/env python3
-"""
-RSI and Candlestick Plotter for SPY Data
-=======================================
-
-This script calculates RSI and plots it alongside candlesticks for June 5th, 2025.
-
-Features:
-- Loads data from the complete SPY dataset
-- Calculates 14-period RSI using Wilder's method
-- Plots candlestick chart with volume bars
-- Adds RSI indicator chart below
-- Highlights overbought and oversold conditions
-"""
-
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt

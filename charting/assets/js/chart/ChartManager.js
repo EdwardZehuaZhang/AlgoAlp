@@ -22,12 +22,16 @@ export class ChartManager {
         this.polygonSMA20Line = null;
         this.polygonSMA50Line = null;
         this.polygonSMA200Line = null;
-        
-        // MACD Indicator series for third pane
+          // MACD Indicator series for third pane
         this.macdHistogramSeries = null;  // MACD Histogram for pane 2
         this.macdLineSeries = null;       // MACD Line for pane 2
         this.macdSignalSeries = null;     // MACD Signal Line for pane 2
         this.macdMarkers = null;          // MACD crossover markers
+        
+        // RSI Indicator series for fourth pane
+        this.rsiSeries = null;           // RSI Line for pane 3
+        this.rsiOverboughtLine = null;    // RSI Overbought Level (70)
+        this.rsiOversoldLine = null;      // RSI Oversold Level (30)
         
         // Series markers for crossover events
         this.csvMarkers = null;           // CSV series markers
@@ -497,8 +501,7 @@ export class ChartManager {
             console.error('Error adding MACD crossover markers:', error);
         }
     }
-    
-    /**
+      /**
      * Clear all chart data
      */
     clearCharts() {
@@ -513,10 +516,14 @@ export class ChartManager {
         if (this.polygonSMA50Line) this.polygonSMA50Line.setData([]);
         if (this.polygonSMA200Line) this.polygonSMA200Line.setData([]);
         
-        // Clear MACD data
+        // Clear indicator data
         if (this.indicatorChart) {
             this.indicatorChart.updateMACDData([], [], []);
+            this.indicatorChart.updateRSIData([]);
         }
+        
+        // Clear series references
+        if (this.rsiSeries) this.rsiSeries.setData([]);
     }
     
     /**
@@ -631,5 +638,62 @@ export class ChartManager {
             
             return adjusted;
         });
+    }
+    
+    /**
+     * Update RSI chart data
+     * @param {Array} rsiData - RSI line data
+     */
+    updateRSIChart(rsiData) {
+        if (!this.indicatorChart) {
+            console.warn('Indicator chart not initialized, attempting to initialize it now...');
+            
+            // Try to initialize the indicator chart if it doesn't exist
+            this.indicatorChart = new IndicatorChartManager();
+            if (this.priceChart && this.priceChart.chart) {
+                this.indicatorChart.initWithParent(this.priceChart);
+                
+                // Try to create RSI components
+                try {
+                    const rsiComponents = this.indicatorChart.addRSIIndicator(3); // Use pane index 3 (fourth pane)
+                    if (rsiComponents) {
+                        this.rsiSeries = rsiComponents.rsi;
+                        this.rsiOverboughtLine = rsiComponents.overboughtLevel;
+                        this.rsiOversoldLine = rsiComponents.oversoldLevel;
+                        console.log('RSI components initialized on-demand');
+                    } else {
+                        console.warn('Failed to create RSI components on-demand');
+                    }
+                } catch (error) {
+                    console.error('Error creating RSI components on-demand:', error);
+                }
+            } else {
+                console.error('Cannot initialize indicator chart: price chart not available');
+                return;
+            }
+        }
+        
+        // Apply the same 4-hour shift to RSI data
+        const shiftedRsiData = this._shiftTimestamps(rsiData, 4, true);
+        
+        // Now attempt to update the RSI data
+        try {
+            // Direct update if we have the series reference
+            if (this.rsiSeries && shiftedRsiData && shiftedRsiData.length > 0) {
+                console.log('Updating RSI line directly');
+                this.rsiSeries.setData(shiftedRsiData);
+            }
+            
+            // Try through the indicator chart's update method
+            try {
+                this.indicatorChart.updateRSIData(shiftedRsiData);
+            } catch (error) {
+                console.warn('Error using indicator chart update method for RSI:', error);
+                // Already tried direct update above
+            }
+            
+        } catch (error) {
+            console.error('Error updating RSI chart:', error);
+        }
     }
 }
