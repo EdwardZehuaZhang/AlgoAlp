@@ -62,77 +62,122 @@ export class IndicatorUtils {
      * @param {number} signalPeriod - Signal line EMA period (default: 9)
      * @returns {Object} Object containing histogram, macdLine, and signalLine arrays
      */
-    static calculateMACDComplete(data, fastPeriod = 12, slowPeriod = 26, signalPeriod = 9) {
-        if (!data || data.length === 0) {
-            return {
-                histogram: [],
-                macdLine: [],
-                signalLine: []
-            };
-        }
-        
-        console.log(`Calculating complete MACD with periods: Fast=${fastPeriod}, Slow=${slowPeriod}, Signal=${signalPeriod}`);
-        
-        // Calculate EMAs
-        const fastEMA = this.calculateEMA(data, fastPeriod);
-        const slowEMA = this.calculateEMA(data, slowPeriod);
-        
-        // Calculate MACD line (Fast EMA - Slow EMA)
-        const macdValues = [];
-        const macdLineData = [];
-        for (let i = 0; i < data.length; i++) {
-            if (fastEMA[i] !== undefined && slowEMA[i] !== undefined) {
-                const macdValue = fastEMA[i] - slowEMA[i];
-                macdValues.push(macdValue);                macdLineData.push({
-                    time: data[i].time,
-                    value: macdValue,
-                    originalTime: data[i].originalTime || data[i].time // Preserve original timestamp if available
-                });
-            } else {
-                macdValues.push(undefined);
-            }
-        }
-          // Create temporary data array for signal EMA calculation
-        const macdData = macdValues.map((value, index) => ({
-            close: value,
-            time: data[index].time,
-            originalTime: data[index].originalTime || data[index].time // Preserve original timestamp
-        })).filter(item => item.close !== undefined);
-        
-        // Calculate Signal line (EMA of MACD)
-        const signalEMAValues = this.calculateEMA(macdData, signalPeriod);
-        
-        // Format signal line data and calculate histogram
-        const signalLineData = [];
-        const histogramData = [];
-        
-        for (let i = 0; i < data.length; i++) {
-            if (macdValues[i] !== undefined && signalEMAValues[i] !== undefined) {                // Signal line data
-                signalLineData.push({
-                    time: data[i].time,
-                    value: signalEMAValues[i],
-                    originalTime: data[i].originalTime || data[i].time // Preserve original timestamp
-                });
-                
-                // Histogram data (MACD - Signal)
-                const histogram = macdValues[i] - signalEMAValues[i];
-                histogramData.push({
-                    time: data[i].time,
-                    value: histogram,
-                    color: histogram >= 0 ? '#26a69a' : '#ef5350', // Green for positive, red for negative
-                    originalTime: data[i].originalTime || data[i].time // Preserve original timestamp
-                });
-            }
-        }
-        
-        console.log(`Complete MACD calculated: ${histogramData.length} data points`);
+
+
+static calculateMACDComplete(data, fastPeriod = 12, slowPeriod = 26, signalPeriod = 9) {
+    if (!data || data.length === 0) {
         return {
-            histogram: histogramData,
-            macdLine: macdLineData,
-            signalLine: signalLineData
+            histogram: [],
+            macdLine: [],
+            signalLine: []
         };
     }
-
+    
+    console.log(`Calculating complete MACD with periods: Fast=${fastPeriod}, Slow=${slowPeriod}, Signal=${signalPeriod}`);
+    console.log(`Input data length: ${data.length} points`);
+    
+    // CALCULATION PHASE - Use all data points
+    // Calculate EMAs
+    const fastEMA = this.calculateEMA(data, fastPeriod);
+    const slowEMA = this.calculateEMA(data, slowPeriod);
+    
+    console.log(`Fast EMA calculated: ${fastEMA.filter(x => x !== undefined).length} valid points`);
+    console.log(`Slow EMA calculated: ${slowEMA.filter(x => x !== undefined).length} valid points`);
+    
+    // Calculate MACD line (Fast EMA - Slow EMA)
+    const macdValues = [];
+    const allMacdLineData = [];
+    
+    let validMACDCount = 0;
+    for (let i = 0; i < data.length; i++) {
+        if (fastEMA[i] !== undefined && slowEMA[i] !== undefined) {
+            const macdValue = fastEMA[i] - slowEMA[i];
+            macdValues.push(macdValue);
+            allMacdLineData.push({
+                time: data[i].time,
+                value: macdValue,
+                originalTime: data[i].originalTime || data[i].time
+            });
+            validMACDCount++;
+        } else {
+            macdValues.push(undefined);
+        }
+    }
+    
+    console.log(`MACD line calculated: ${validMACDCount} valid points`);
+    
+    // Create temporary data array for signal EMA calculation with ALL MACD values
+    const macdData = macdValues.map((value, index) => ({
+        close: value,
+        time: data[index].time,
+        originalTime: data[index].originalTime || data[index].time
+    })).filter(item => item.close !== undefined);
+    
+    // Calculate Signal line (EMA of MACD)
+    const signalEMAValues = this.calculateEMA(macdData, signalPeriod);
+    
+    // Map signal values back to original indices
+    const signalValues = new Array(data.length).fill(undefined);
+    let signalIdx = 0;
+    for (let i = 0; i < data.length; i++) {
+        if (fastEMA[i] !== undefined && slowEMA[i] !== undefined) {
+            if (signalIdx < signalEMAValues.length) {
+                signalValues[i] = signalEMAValues[signalIdx];
+                signalIdx++;
+            }
+        }
+    }
+    
+    // PREPARATION PHASE - Create all data points
+    const allSignalLineData = [];
+    const allHistogramData = [];
+    
+    for (let i = 0; i < data.length; i++) {
+        if (macdValues[i] !== undefined && signalValues[i] !== undefined) {
+            // Signal line data
+            allSignalLineData.push({
+                time: data[i].time,
+                value: signalValues[i],
+                originalTime: data[i].originalTime || data[i].time
+            });
+            
+            // Histogram data (MACD - Signal)
+            const histogram = macdValues[i] - signalValues[i];
+            allHistogramData.push({
+                time: data[i].time,
+                value: histogram,
+                color: histogram >= 0 ? '#26a69a' : '#ef5350', // Green for positive, red for negative
+                originalTime: data[i].originalTime || data[i].time
+            });
+        }
+    }
+    
+    // FILTERING PHASE - Filter data points to desired timeframe
+    const isWithinTimeframe = (timestamp) => {
+        const date = new Date(timestamp * 1000);
+        const hours = date.getHours();
+        
+        // Adjust this condition based on your specific timeframe requirements
+        // For example, for market hours (9:30 AM - 4:00 PM):
+        return hours >= 21 || hours < 4;  // For your specific use case
+    };
+    
+    // Apply filtering to output data
+    const macdLineData = allMacdLineData.filter(item => isWithinTimeframe(item.time));
+    const signalLineData = allSignalLineData.filter(item => isWithinTimeframe(item.time));
+    const histogramData = allHistogramData.filter(item => isWithinTimeframe(item.time));
+    
+    console.log(`All MACD data points: ${allMacdLineData.length}`);
+    console.log(`Filtered MACD data points: ${macdLineData.length}`);
+    console.log(`Filtered signal line data points: ${signalLineData.length}`);
+    console.log(`Filtered histogram data points: ${histogramData.length}`);
+    
+    return {
+        histogram: histogramData,
+        macdLine: macdLineData,
+        signalLine: signalLineData
+    };
+}
     /**
      * Calculate MACD Histogram data for Lightweight Charts (backward compatibility)
      * @param {Array} data - Array of data points with close values
@@ -141,9 +186,115 @@ export class IndicatorUtils {
      * @param {number} signalPeriod - Signal line EMA period (default: 9)
      * @returns {Array} Array of histogram data points for chart
      */
-    static calculateMACDHistogram(data, fastPeriod = 12, slowPeriod = 26, signalPeriod = 9) {
-        return this.calculateMACDComplete(data, fastPeriod, slowPeriod, signalPeriod).histogram;
+static calculateMACDComplete(data, fastPeriod = 12, slowPeriod = 26, signalPeriod = 9) {
+    if (!data || data.length === 0) {
+        return {
+            histogram: [],
+            macdLine: [],
+            signalLine: []
+        };
     }
+    
+    console.log(`Calculating complete MACD with periods: Fast=${fastPeriod}, Slow=${slowPeriod}, Signal=${signalPeriod}`);
+    
+    // CALCULATION PHASE - Use all data points
+    // Calculate EMAs
+    const fastEMA = this.calculateEMA(data, fastPeriod);
+    const slowEMA = this.calculateEMA(data, slowPeriod);
+    
+    // Calculate MACD line (Fast EMA - Slow EMA)
+    const macdValues = [];
+    const allMacdLineData = [];
+    
+    for (let i = 0; i < data.length; i++) {
+        if (fastEMA[i] !== undefined && slowEMA[i] !== undefined) {
+            const macdValue = fastEMA[i] - slowEMA[i];
+            macdValues.push(macdValue);
+            
+            // Shift time by subtracting 4 hours (4 * 60 * 60 seconds)
+            const adjustedTime = data[i].time - (4 * 60 * 60);
+            
+            allMacdLineData.push({
+                time: adjustedTime,
+                value: macdValue,
+                originalTime: data[i].time
+            });
+        } else {
+            macdValues.push(undefined);
+        }
+    }
+    
+    // Create temporary data array for signal EMA calculation
+    const macdData = macdValues.map((value, index) => ({
+        close: value,
+        time: data[index].time, // Keep original time for calculation
+        originalTime: data[index].time
+    })).filter(item => item.close !== undefined);
+    
+    // Calculate Signal line (EMA of MACD)
+    const signalEMAValues = this.calculateEMA(macdData, signalPeriod);
+    
+    // Map signal values back to original indices
+    const signalValues = new Array(data.length).fill(undefined);
+    let signalIdx = 0;
+    for (let i = 0; i < data.length; i++) {
+        if (fastEMA[i] !== undefined && slowEMA[i] !== undefined) {
+            if (signalIdx < signalEMAValues.length) {
+                signalValues[i] = signalEMAValues[signalIdx];
+                signalIdx++;
+            }
+        }
+    }
+    
+    // Format signal line data and calculate histogram with adjusted timestamps
+    const allSignalLineData = [];
+    const allHistogramData = [];
+    
+    for (let i = 0; i < data.length; i++) {
+        if (macdValues[i] !== undefined && signalValues[i] !== undefined) {
+            // Shift time by subtracting 4 hours (4 * 60 * 60 seconds)
+            const adjustedTime = data[i].time - (4 * 60 * 60);
+            
+            // Signal line data
+            allSignalLineData.push({
+                time: adjustedTime,
+                value: signalValues[i],
+                originalTime: data[i].time
+            });
+            
+            // Histogram data (MACD - Signal)
+            const histogram = macdValues[i] - signalValues[i];
+            allHistogramData.push({
+                time: adjustedTime,
+                value: histogram,
+                color: histogram >= 0 ? '#26a69a' : '#ef5350', // Green for positive, red for negative
+                originalTime: data[i].time
+            });
+        }
+    }
+    
+    // FILTERING PHASE - Filter data points to desired timeframe
+    const isWithinTimeframe = (timestamp) => {
+        const date = new Date(timestamp * 1000);
+        const hours = date.getHours();
+        return hours >= 17 || hours < 4;  // Keep the same filtering
+    };
+    
+    // Apply filtering to output data with adjusted timestamps
+    const macdLineData = allMacdLineData.filter(item => isWithinTimeframe(item.time));
+    const signalLineData = allSignalLineData.filter(item => isWithinTimeframe(item.time));
+    const histogramData = allHistogramData.filter(item => isWithinTimeframe(item.time));
+    
+    console.log(`All MACD data points: ${allMacdLineData.length}`);
+    console.log(`Filtered MACD data points: ${macdLineData.length}`);
+    
+    return {
+        histogram: histogramData,
+        macdLine: macdLineData,
+        signalLine: signalLineData
+    };
+}
+
       /**
      * Calculate Relative Strength Index (RSI)
      * @param {Array} data - Array of price data points (should already be filtered for market hours)

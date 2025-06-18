@@ -21,9 +21,9 @@ export class DataManager {
             console.log('CSV data loaded (full dataset):', rawData.length, 'total points');
             
             // Filter to market hours only (9:30 AM - 4:00 PM)
-            const data = DataUtils.filterMarketHours(rawData);
-            console.log('CSV data filtered to market hours:', data.length, 'total points');
-            
+
+            const data = rawData;
+
             if (data.length > 0) {
                 console.log('CSV - First timestamp (raw):', data[0].time);
                 console.log('CSV - First timestamp (date):', new Date(data[0].time * 1000));
