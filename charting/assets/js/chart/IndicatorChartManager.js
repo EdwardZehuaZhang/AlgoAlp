@@ -2,43 +2,7 @@
 
 import { BaseChartManager } from './BaseChartManager.js';
 import { CONFIG } from '../config.js';
-
-try {
-    if (timeRange) {
-        const oversoldData = [
-            { time: timeRange.from, value: 30 },
-            { time: timeRange.to, value: 30 }
-        ];
-
-        const overboughtData = [
-            { time: timeRange.from, value: 70 },
-            { time: timeRange.to, value: 70 }
-        ];
-
-        overboughtLevel.setData(overboughtData);
-        oversoldLevel.setData(oversoldData);
-    } else {
-        // Fallback to hardcoded range (will be updated when data arrives)
-        const now = Math.floor(Date.now() / 1000);
-        const oneYearAgo = now - (365 * 24 * 60 * 60);
-
-        const overboughtData = [
-            { time: oneYearAgo, value: 70 },
-            { time: now, value: 70 }
-        ];
-
-        const oversoldData = [
-            { time: oneYearAgo, value: 30 },
-            { time: now, value: 30 }
-        ];
-
-        overboughtLevel.setData(overboughtData);
-        oversoldLevel.setData(oversoldData);
-    }
-} catch (error) {
-    console.error('Error setting RSI level lines:', error);
-}
-
+import { MarkerUtils } from '../utils/markerUtils.js';
 
 export class IndicatorChartManager extends BaseChartManager {
     constructor() {
@@ -144,10 +108,9 @@ export class IndicatorChartManager extends BaseChartManager {
         
         // Merge options
         const rsiOptions = { ...defaultOptions, ...options };
-        
-        // Create RSI line series
+          // Create RSI line series
         const rsiSeries = this.addSeries(LightweightCharts.LineSeries, {
-            id: 'rsi',
+            id: 'rsi_line',
             ...rsiOptions
         }, paneIndex);
         
@@ -189,10 +152,10 @@ export class IndicatorChartManager extends BaseChartManager {
         // Set the level data
         overboughtLevel.setData(overboughtData);
         oversoldLevel.setData(oversoldData);
-        
-        // Create components object to return
+          // Create components object to return
         const rsiComponents = {
-            rsi: rsiSeries,
+            rsi_line: rsiSeries,  // Use consistent ID: rsi_line
+            // Remove the legacy 'rsi' reference to avoid confusion
             overboughtLevel: overboughtLevel,
             oversoldLevel: oversoldLevel
         };
@@ -204,22 +167,8 @@ export class IndicatorChartManager extends BaseChartManager {
             paneIndex
         });
         
+        console.log('RSI indicator created with components:', Object.keys(rsiComponents));
         return rsiComponents;
-        this.indicators.set('rsi', {
-            type: 'rsi',
-            components: {
-                main: rsiSeries,
-                overbought: overboughtLevel,
-                oversold: oversoldLevel
-            },
-            paneIndex
-        });
-        
-        return {
-            main: rsiSeries,
-            overbought: overboughtLevel,
-            oversold: oversoldLevel
-        };
     }
     
     /**
@@ -259,8 +208,7 @@ export class IndicatorChartManager extends BaseChartManager {
             console.error('Error updating MACD data:', error);
             return false;
         }
-    }
-      /**
+    }    /**
      * Update RSI data
      * @param {Array} rsiData - RSI data points (should be filtered to market hours)
      */
@@ -272,36 +220,45 @@ export class IndicatorChartManager extends BaseChartManager {
         
         const rsiIndicator = this.indicators.get('rsi');
         
-        if (!rsiIndicator || !rsiIndicator.components || !rsiIndicator.components.rsi) {
+        if (!rsiIndicator || !rsiIndicator.components || !rsiIndicator.components.rsi_line) {
             console.log('RSI indicator not found, creating it now');
             const components = this.addRSIIndicator(3); // Use pane index 3 (fourth pane)
             
-            if (!components || !components.rsi) {
+            if (!components || !components.rsi_line) {
                 console.error('Failed to create RSI indicator components');
                 return;
             }
             
             console.log(`Updating RSI data with ${rsiData.length} points`);
-            components.rsi.setData(rsiData);
+            // Always use rsi_line for consistency
+            const rsiSeries = components.rsi_line;
+            console.log('RSI series ID:', rsiSeries.options ? rsiSeries.options().id : 'unknown');
+            rsiSeries.setData(rsiData);
+            return;
+        }
+        
+        // Always use rsi_line for consistency
+        const rsiSeries = rsiIndicator.components.rsi_line;
+        
+        if (!rsiSeries) {
+            console.error('RSI series not found in components');
             return;
         }
         
         // Set the RSI data
         console.log(`Updating RSI data with ${rsiData.length} points`);
-        rsiIndicator.components.rsi.setData(rsiData);
+        rsiSeries.setData(rsiData);
+        
+        // Debug RSI data range
+        const min = Math.min(...rsiData.map(d => d.value));
+        const max = Math.max(...rsiData.map(d => d.value));
+        console.log(`RSI data range in IndicatorChartManager: min=${min.toFixed(2)}, max=${max.toFixed(2)}`);
         
         // Ensure the price scale is fixed for RSI (0-100)
         try {
-            const paneOptions = {
-                scaleMargins: {
-                    top: 0.1,
-                    bottom: 0.1,
-                }
-            };
-            
             // Try to apply to the rsi component directly
-            if (rsiIndicator.components.rsi.applyOptions) {
-                rsiIndicator.components.rsi.applyOptions({
+            if (rsiSeries.applyOptions) {
+                rsiSeries.applyOptions({
                     autoscaleInfoProvider: () => ({
                         priceRange: {
                             minValue: 0,
@@ -309,6 +266,31 @@ export class IndicatorChartManager extends BaseChartManager {
                         }
                     })
                 });
+            }
+            
+            // Calculate and add RSI crossover markers
+            try {
+                const thresholds = { above70: 0, below30: 0, between3070: 0 };
+                rsiData.forEach(point => {
+                    if (point.value > 70) thresholds.above70++;
+                    else if (point.value < 30) thresholds.below30++;
+                    else thresholds.between3070++;
+                });
+                
+                if (thresholds.below30 > 0 || thresholds.above70 > 0) {
+                    console.log(`RSI threshold distribution from IndicatorChartManager: ${thresholds.below30} points below 30, ${thresholds.above70} points above 70`);
+                    console.log('RSI data has potential crossover points, calculating markers...');
+                    
+                    const crossovers = MarkerUtils.calculateRSICrossovers(rsiData);
+                    
+                    if (crossovers.length > 0) {
+                        console.log(`Found ${crossovers.length} RSI crossovers in IndicatorChartManager`);
+                        const markers = MarkerUtils.createRSICrossoverMarkers(crossovers);
+                        this.addRSIMarkers(markers);
+                    }
+                }
+            } catch (markerError) {
+                console.warn('Error adding RSI markers from updateRSIData:', markerError);
             }
         } catch (error) {
             console.warn('Could not fix RSI price scale:', error);
@@ -387,6 +369,98 @@ export class IndicatorChartManager extends BaseChartManager {
             return null;
         } catch (error) {
             console.error('Error adding MACD markers:', error);
+            return null;
+        }
+    }
+        /**
+     * Add RSI level crossover markers to the RSI line
+     * @param {Array} markers - Array of marker objects
+     * @returns {Object|null} The markers plugin or null if failed
+     */
+    addRSIMarkers(markers) {
+        if (!this.chart) {
+            console.error('Cannot add RSI markers: Chart not initialized');
+            return null;
+        }
+        
+        console.log('IndicatorChartManager.addRSIMarkers called with', markers.length, 'markers');
+        
+        if (!this.indicators.has('rsi')) {
+            console.error('RSI indicator not found in indicators map');
+            console.log('Available indicators:', Array.from(this.indicators.keys()));
+            return null;
+        }
+        
+        const rsiIndicator = this.indicators.get('rsi');
+        
+        if (!rsiIndicator || !rsiIndicator.components) {
+            console.error('Invalid RSI indicator structure');
+            return null;
+        }
+        
+        // Always use rsi_line for consistency
+        let rsiSeries = rsiIndicator.components.rsi_line;
+        if (!rsiSeries) {
+            console.error('RSI series not found with ID "rsi_line"');
+            return null;
+        }
+        
+        if (!rsiSeries) {
+            console.error('RSI series not found in components');
+            console.log('Available components:', Object.keys(rsiIndicator.components));
+            return null;
+        }
+        
+        console.log('Adding RSI markers to RSI line series');
+        console.log('RSI series ID:', rsiSeries.options ? rsiSeries.options().id : 'unknown');
+        
+        // Log the first few markers
+        console.log('First markers to add:');
+        markers.slice(0, 3).forEach((m, i) => {
+            console.log(`  Marker #${i+1}: time=${new Date(m.time * 1000).toLocaleDateString()}, position=${m.position}, text=${m.text}`);
+        });
+        
+        try {
+            // Try to use window.createSeriesMarkers (which we exposed in index.html)
+            if (typeof window.createSeriesMarkers === 'function') {
+                console.log('Using window.createSeriesMarkers for RSI');
+                // Verify that rsiSeries has the correct interface
+                if (!rsiSeries || typeof rsiSeries !== 'object') {
+                    console.error('Invalid RSI series object:', rsiSeries);
+                    return null;
+                }
+                
+                // Log details about the series object
+                console.log('RSI series for markers:', {
+                    id: rsiSeries.options ? rsiSeries.options().id : 'unknown',
+                    hasSetMarkers: typeof rsiSeries.setMarkers === 'function'
+                });
+                
+                const result = window.createSeriesMarkers(rsiSeries, markers);
+                console.log('RSI markers added successfully');
+                return result;
+            }
+            
+            // Try directly from LightweightCharts global object
+            if (typeof LightweightCharts !== 'undefined' && typeof LightweightCharts.createSeriesMarkers === 'function') {
+                console.log('Using LightweightCharts.createSeriesMarkers for RSI');
+                const result = LightweightCharts.createSeriesMarkers(rsiSeries, markers);
+                console.log('RSI markers added successfully with LightweightCharts.createSeriesMarkers');
+                return result;
+            }
+            
+            // Try to use setMarkers method directly if available
+            if (rsiSeries && typeof rsiSeries.setMarkers === 'function') {
+                console.log('Using rsiSeries.setMarkers directly');
+                rsiSeries.setMarkers(markers);
+                return { markers };
+            }
+            
+            console.error('No method available to add RSI markers');
+            return null;
+        } catch (error) {
+            console.error('Error adding RSI markers:', error);
+            console.error('Error stack:', error.stack);
             return null;
         }
     }

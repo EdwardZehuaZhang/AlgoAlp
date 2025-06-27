@@ -8,12 +8,34 @@
     <link rel="icon" href="assets/favicon.ico" type="image/x-icon">
       <!-- External Dependencies -->
     <script src="https://unpkg.com/lightweight-charts@5.0.0/dist/lightweight-charts.standalone.production.js"></script>
-    
-    <!-- Make Lightweight Charts functions globally available -->
+      <!-- Make Lightweight Charts functions globally available -->
     <script>
         // Extract specific functions from LightweightCharts for easy access
         const { createChart, createSeriesMarkers } = LightweightCharts;
-        window.createSeriesMarkers = createSeriesMarkers; // Make globally available
+        
+        // Create a safer wrapper around createSeriesMarkers to handle any issues
+        window.createSeriesMarkers = function(series, markers) {
+            console.log('Creating markers:', markers.length);
+            
+            if (!series) {
+                console.error('Invalid series object');
+                return null;
+            }
+            
+            if (!markers || markers.length === 0) {
+                console.warn('No markers to add');
+                return null;
+            }
+            
+            try {
+                const result = createSeriesMarkers(series, markers);
+                console.log('Markers created successfully');
+                return result;
+            } catch (error) {
+                console.error('Error creating series markers:', error);
+                return null;
+            }
+        };
     </script>
     
     <!-- Application Styles -->

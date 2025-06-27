@@ -36,6 +36,8 @@ export class ChartManager {
         // Series markers for crossover events
         this.csvMarkers = null;           // CSV series markers
         this.polygonMarkers = null;       // Polygon series markers
+        this.goldenDeathCrossMarkers = null;    // Golden/Death cross markers for polygon series
+        this.goldenDeathCrossMarkersPlugin = null;  // Plugin reference for golden/death cross markers
     }
     
     /**
@@ -326,6 +328,18 @@ export class ChartManager {
         if (this.polygonSMA200Line && shiftedSMA200) {
             this.polygonSMA200Line.setData(shiftedSMA200);
         }
+        
+        // Add Golden Cross and Death Cross markers to the polygon chart
+        if (shiftedSMA50 && shiftedSMA200 && shiftedSMA50.length > 0 && shiftedSMA200.length > 0) {
+            console.log('Adding Golden/Death cross markers to polygon chart...');
+            try {
+                this.addGoldenDeathCrossMarkers(shiftedSMA50, shiftedSMA200);
+            } catch (error) {
+                console.error('Error adding Golden/Death cross markers to polygon chart:', error);
+            }
+        } else {
+            console.log('Skipping Golden/Death cross markers - insufficient SMA data');
+        }
           if (markers && markers.length > 0) {
             // Shift marker timestamps too
             const shiftedMarkers = markers.map(marker => {
@@ -516,6 +530,21 @@ export class ChartManager {
         if (this.polygonSMA50Line) this.polygonSMA50Line.setData([]);
         if (this.polygonSMA200Line) this.polygonSMA200Line.setData([]);
         
+        // Clear markers
+        this.csvMarkers = null;
+        this.polygonMarkers = null;
+        this.goldenDeathCrossMarkers = null;
+        
+        // Clean up marker plugins
+        if (this.goldenDeathCrossMarkersPlugin) {
+            try {
+                this.goldenDeathCrossMarkersPlugin.setMarkers([]);
+            } catch (e) {
+                console.warn('Error clearing golden/death cross markers:', e);
+            }
+            this.goldenDeathCrossMarkersPlugin = null;
+        }
+        
         // Clear indicator data
         if (this.indicatorChart) {
             this.indicatorChart.updateMACDData([], [], []);
@@ -564,8 +593,7 @@ export class ChartManager {
             this.priceChart.destroy();
         }
     }
-    
-    /**
+      /**
      * Helper method to properly set markers on a series
      * @param {Object} series - The series object to set markers on
      * @param {Array} markers - The markers to set
@@ -574,31 +602,46 @@ export class ChartManager {
      * @private
      */
     _setMarkersSafely(series, markers, seriesId) {
-        if (!series || !markers || !markers.length) {
+        // Basic input validation
+        if (!series) {
+            console.warn(`Cannot set markers: series object (${seriesId}) is not defined`);
             return false;
         }
         
+        if (!markers || !markers.length) {
+            console.warn(`Cannot set markers: empty markers array for ${seriesId}`);
+            return false;
+        }
+        
+        // Don't try to add markers to candlestick series as they don't support them in v5
+        if (seriesId === 'csv_series' || seriesId === 'polygon_series') {
+            console.log(`Skipping marker addition for ${seriesId} - candlestick series doesn't support markers in this version`);
+            return false;
+        }
+        
+        console.log(`Attempting to set ${markers.length} markers on ${seriesId}`);
+        console.log('First marker:', markers[0]);
+        
         try {
-            // Try direct method first
+            // Use createSeriesMarkers for Lightweight Charts v5+
+            if (typeof window.createSeriesMarkers === 'function') {
+                console.log(`Setting ${markers.length} markers on ${seriesId} using createSeriesMarkers`);
+                window.createSeriesMarkers(series, markers);
+                return true;
+            }
+            
+            // Try direct method next (for backwards compatibility)
             if (typeof series.setMarkers === 'function') {
                 console.log(`Setting ${markers.length} markers on ${seriesId} using setMarkers()`);
                 series.setMarkers(markers);
                 return true;
             } 
+            
             // Try through the series API if available
             else if (series.api && typeof series.api.setMarkers === 'function') {
                 console.log(`Setting ${markers.length} markers on ${seriesId} using series.api`);
                 series.api.setMarkers(markers);
                 return true;
-            }
-            // For newer versions, use the actual series object
-            else if (typeof this.priceChart.getSeries === 'function') {
-                const seriesObj = this.priceChart.getSeries(seriesId);
-                if (seriesObj && typeof seriesObj.setMarkers === 'function') {
-                    console.log(`Setting ${markers.length} markers on ${seriesId} using seriesMap lookup`);
-                    seriesObj.setMarkers(markers);
-                    return true;
-                }
             }
             
             // If all else fails
@@ -606,6 +649,7 @@ export class ChartManager {
             return false;
         } catch (error) {
             console.error(`Error setting markers on ${seriesId}:`, error);
+            console.error(error.stack);
             return false;
         }
     }
@@ -657,10 +701,15 @@ export class ChartManager {
                 try {
                     const rsiComponents = this.indicatorChart.addRSIIndicator(3); // Use pane index 3 (fourth pane)
                     if (rsiComponents) {
-                        this.rsiSeries = rsiComponents.rsi;
+                        // Use the correct ID (rsi_line instead of rsi) to match the series created in IndicatorChartManager
+                        this.rsiSeries = rsiComponents.rsi_line;
                         this.rsiOverboughtLine = rsiComponents.overboughtLevel;
                         this.rsiOversoldLine = rsiComponents.oversoldLevel;
                         console.log('RSI components initialized on-demand');
+                        // Log the series ID for debugging
+                        if (this.rsiSeries) {
+                            console.log('RSI series ID:', this.rsiSeries.options ? this.rsiSeries.options().id : 'unknown');
+                        }
                     } else {
                         console.warn('Failed to create RSI components on-demand');
                     }
@@ -682,6 +731,24 @@ export class ChartManager {
             if (this.rsiSeries && shiftedRsiData && shiftedRsiData.length > 0) {
                 console.log('Updating RSI line directly');
                 this.rsiSeries.setData(shiftedRsiData);
+                
+                // Log RSI data range for debugging
+                const min = Math.min(...shiftedRsiData.map(d => d.value));
+                const max = Math.max(...shiftedRsiData.map(d => d.value));
+                console.log(`RSI data range: min=${min.toFixed(2)}, max=${max.toFixed(2)}`);
+                
+                // Log RSI values around the important thresholds (30 and 70)
+                console.log('RSI values check:');
+                const thresholds = { above70: 0, below30: 0, between3070: 0 };
+                shiftedRsiData.forEach(point => {
+                    if (point.value > 70) thresholds.above70++;
+                    else if (point.value < 30) thresholds.below30++;
+                    else thresholds.between3070++;
+                });
+                console.log(`RSI distribution: ${thresholds.below30} points below 30, ${thresholds.between3070} points between 30-70, ${thresholds.above70} points above 70`);
+                
+                // Add RSI level crossover markers
+                this.addRSIMarkers(shiftedRsiData);
             }
             
             // Try through the indicator chart's update method
@@ -694,6 +761,178 @@ export class ChartManager {
             
         } catch (error) {
             console.error('Error updating RSI chart:', error);
+        }
+    }
+      /**
+     * Add RSI level crossover markers
+     * @param {Array} rsiData - RSI line data
+     */
+    addRSIMarkers(rsiData) {
+        console.log('=== RSI MARKERS DEBUG ===');
+        
+        // Basic checks and validation
+        if (!rsiData || rsiData.length === 0) {
+            console.log('Cannot add RSI markers: Missing or empty data');
+            return;
+        }
+        
+        console.log(`RSI Data: Length=${rsiData.length}, First point=${JSON.stringify(rsiData[0])}`);
+        
+        // Check RSI series
+        if (!this.rsiSeries) {
+            console.warn('RSI series not available for setting markers');
+            return;
+        }
+        
+        console.log('RSI series found:', this.rsiSeries);
+        
+        try {
+            // Calculate RSI crossover points
+            console.log('Calculating RSI crossovers...');
+            const crossovers = MarkerUtils.calculateRSICrossovers(rsiData);
+            console.log(`Found ${crossovers.length} RSI level crossovers`);
+            
+            if (crossovers.length === 0) {
+                console.log('No RSI level crossovers found - nothing to display');
+                return;
+            }
+            
+            // Log crossover details
+            console.log('RSI crossover details:');
+            crossovers.slice(0, 5).forEach((c, i) => {
+                console.log(`  Crossover #${i+1}: ${c.type} at ${new Date(c.time * 1000).toLocaleDateString()} ${new Date(c.time * 1000).toLocaleTimeString()} (RSI: ${c.value.toFixed(2)})`);
+            });
+            
+            // Create formatted markers for the chart
+            const markers = MarkerUtils.createRSICrossoverMarkers(crossovers);
+            
+            // Store marker reference
+            this.rsiMarkers = markers;
+            
+            console.log(`Created ${markers.length} marker objects for RSI`);
+            console.log('First few markers:', markers.slice(0, 2));
+            
+            // Directly use window.createSeriesMarkers with the RSI series and clear debug info
+            if (typeof window.createSeriesMarkers === 'function') {
+                console.log(`Applying ${markers.length} markers to RSI series using createSeriesMarkers`);
+                
+                try {
+                    // Log details about the RSI series for debugging
+                    console.log('RSI series for markers in ChartManager:', {
+                        exists: !!this.rsiSeries,
+                        id: this.rsiSeries && this.rsiSeries.options ? this.rsiSeries.options().id : 'unknown',
+                        hasSetMarkers: this.rsiSeries && typeof this.rsiSeries.setMarkers === 'function'
+                    });
+                    
+                    // Use the global function to create markers
+                    this.rsiMarkersPlugin = window.createSeriesMarkers(this.rsiSeries, markers);
+                    console.log('RSI markers successfully created with ID:', 
+                        this.rsiSeries.options ? this.rsiSeries.options().id : 'unknown');
+                } catch (e) {
+                    console.error('Error creating RSI markers:', e);
+                    
+                    // Try to apply markers through the indicator chart
+                    if (this.indicatorChart && typeof this.indicatorChart.addRSIMarkers === 'function') {
+                        console.log('Attempting to add markers through IndicatorChartManager');
+                        this.indicatorChart.addRSIMarkers(markers);
+                    }
+                }
+            } else {
+                console.error('window.createSeriesMarkers function is not available');
+                
+                // Try to apply markers through the indicator chart as fallback
+                if (this.indicatorChart && typeof this.indicatorChart.addRSIMarkers === 'function') {
+                    console.log('Attempting to add markers through IndicatorChartManager');
+                    this.indicatorChart.addRSIMarkers(markers);
+                }
+            }
+        } catch (error) {
+            console.error('Error adding RSI level crossover markers:', error);
+        }
+        
+        console.log('=== END RSI MARKERS DEBUG ===');
+    }
+    
+    /**
+     * Add Golden Cross and Death Cross markers to the polygon candlestick chart
+     * @param {Array} sma50Data - SMA 50 data points
+     * @param {Array} sma200Data - SMA 200 data points
+     */
+    addGoldenDeathCrossMarkers(sma50Data, sma200Data) {
+        console.log('=== GOLDEN/DEATH CROSS MARKERS DEBUG ===');
+        
+        // Basic validation
+        if (!sma50Data || sma50Data.length === 0) {
+            console.log('Cannot add golden/death cross markers: Missing or empty SMA50 data');
+            return;
+        }
+        
+        if (!sma200Data || sma200Data.length === 0) {
+            console.log('Cannot add golden/death cross markers: Missing or empty SMA200 data');
+            return;
+        }
+        
+        console.log(`SMA Data: SMA50 length=${sma50Data.length}, SMA200 length=${sma200Data.length}`);
+        console.log('First SMA50 point:', JSON.stringify(sma50Data[0]));
+        console.log('First SMA200 point:', JSON.stringify(sma200Data[0]));
+        
+        // Check polygon series
+        if (!this.polygonSeries) {
+            console.warn('Polygon series not available for setting golden/death cross markers');
+            return;
+        }
+        
+        try {
+            // Calculate golden/death cross points
+            console.log('Calculating Golden/Death crosses...');
+            const crossovers = MarkerUtils.calculateGoldenDeathCrosses(sma50Data, sma200Data);
+            console.log(`Found ${crossovers.length} Golden/Death crosses`);
+            
+            if (crossovers.length === 0) {
+                console.log('No Golden/Death crosses found - nothing to display');
+                return;
+            }
+            
+            // Log crossover details
+            console.log('Golden/Death cross details:');
+            crossovers.slice(0, 5).forEach((c, i) => {
+                console.log(`  Cross #${i+1}: ${c.type} at ${new Date(c.time * 1000).toLocaleDateString()} ${new Date(c.time * 1000).toLocaleTimeString()}`);
+            });
+            
+            // Create formatted markers for the chart
+            const markers = MarkerUtils.createGoldenDeathCrossMarkers(crossovers);
+            
+            // Store marker reference
+            this.goldenDeathCrossMarkers = markers;
+            
+            console.log(`Created ${markers.length} marker objects for Golden/Death crosses`);
+            console.log('First few markers:', markers.slice(0, 2));
+            
+            // Apply markers to polygon series using window.createSeriesMarkers
+            if (typeof window.createSeriesMarkers === 'function') {
+                console.log(`Applying ${markers.length} markers to polygon series using createSeriesMarkers`);
+                
+                try {
+                    // Log details about the polygon series for debugging
+                    console.log('Polygon series for markers:', {
+                        exists: !!this.polygonSeries,
+                        id: this.polygonSeries && this.polygonSeries.options ? this.polygonSeries.options().id : 'unknown',
+                        hasSetMarkers: this.polygonSeries && typeof this.polygonSeries.setMarkers === 'function'
+                    });
+                    
+                    // Use the global function to create markers
+                    this.goldenDeathCrossMarkersPlugin = window.createSeriesMarkers(this.polygonSeries, markers);
+                    console.log('Golden/Death cross markers successfully created on polygon series:', 
+                        this.polygonSeries.options ? this.polygonSeries.options().id : 'unknown');
+                } catch (e) {
+                    console.error('Error creating Golden/Death cross markers:', e);
+                }
+            } else {
+                console.error('window.createSeriesMarkers function is not available for Golden/Death crosses');
+            }
+            
+        } catch (error) {
+            console.error('Error adding Golden/Death cross markers:', error);
         }
     }
 }
