@@ -1,6 +1,9 @@
 # Environment variables
 .env
 
+# Ignore Alpaca documentation HTML files that contain example AWS credentials
+docs.alpaca.markets/
+
 # Python
 __pycache__/
 *.py[cod]
@@ -45,4 +48,4 @@ ENV/
 
 # OS specific
 .DS_Store
-Thumbs.db 
+Thumbs.db
